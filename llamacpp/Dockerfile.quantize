@@ -1,0 +1,31 @@
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Clone and build llama.cpp — this gives us llama-quantize and convert_hf_to_gguf.py
+RUN git clone https://github.com/ggerganov/llama.cpp .
+
+# Build only llama-quantize — CPU only, no CUDA needed for quantization
+RUN cmake -B build -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF && \
+    cmake --build build --config Release --target llama-quantize -j$(nproc)
+
+# Install Python deps for the conversion script
+RUN pip3 install --break-system-packages \
+    torch \
+    transformers \
+    sentencepiece \
+    numpy \
+    gguf
+
+# Make the quantize binary accessible
+ENV PATH="/app/build/bin:$PATH"

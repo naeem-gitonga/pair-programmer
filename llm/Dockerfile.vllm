@@ -1,0 +1,15 @@
+FROM vllm/vllm-openai:latest
+
+ENV HF_HUB_OFFLINE=1
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+CMD [ \
+    "--model", "/app/models/qwen3-coder-next", \
+    "--host", "0.0.0.0", \
+    "--port", "8004", \
+    "--dtype", "bfloat16", \
+    "--served-model-name", "local", \
+    "--tool-call-parser", "qwen3_coder", \
+    "--enable-auto-tool-choice", \
+    "--max-model-len", "32768" \
+]
