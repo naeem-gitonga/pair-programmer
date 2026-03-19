@@ -79,17 +79,18 @@ async function main(): Promise<void> {
       console.log(chalk.cyan("═".repeat(cols)));
       console.log();
 
-      // Engagement spinner — visible immediately while the request is being sent
+      // Spinner pinned to bottom-left — persists for the entire model generation
       const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
       let frameIdx = 0;
+      const spinnerRow = process.stdout.rows || 24;
       const engageSpinner = setInterval(() => {
-        process.stdout.write(`\r${chalk.hex("#FFA500")(frames[frameIdx++ % frames.length])} Sending to model...  `);
+        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H${chalk.hex("#FFA500")(frames[frameIdx++ % frames.length])} thinking...\x1b[u`);
       }, 80);
 
-      await runAgent(client, userMessage, history, currentModelId, () => {
-        clearInterval(engageSpinner);
-        process.stdout.write("\r\x1b[K");
-      });
+      await runAgent(client, userMessage, history, currentModelId);
+
+      clearInterval(engageSpinner);
+      process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K\x1b[u`); // clear spinner
     } catch (err) {
       console.error(chalk.red(`\nError: ${(err as Error).message}`));
     }
