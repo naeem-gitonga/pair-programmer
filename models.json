@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Qwen3-Coder-Next (local)",
+    "url": "http://localhost:8004",
+    "modelId": "Qwen3 Coder (Local)"
+  },
+  {
+    "name": "My AWS Model",
+    "url": "https://your-aws-endpoint.com",
+    "modelId": "your-model-id"
+  }
+]

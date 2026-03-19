@@ -7,6 +7,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import chalk from "chalk";
 import { toolDefinitions, executeTool } from "./tools.js";
 import { MODEL_NAME, MAX_TOKENS, TEMPERATURE } from "./config.js";
+import { renderMarkdown } from "./markdown.js";
 
 function readKey(prompt: string): Promise<string> {
   return new Promise((resolve) => {
@@ -25,9 +26,6 @@ function readKey(prompt: string): Promise<string> {
 }
 
 function showDiff(filePath: string, oldContent: string, newContent: string): void {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-
   const tmpOld = join(tmpdir(), `pair-prog-old-${basename(filePath)}`);
   const tmpNew = join(tmpdir(), `pair-prog-new-${basename(filePath)}`);
   writeFileSync(tmpOld, oldContent);
@@ -58,11 +56,15 @@ async function approveWriteFile(filePath: string, newContent: string): Promise<b
 
 const SYSTEM_PROMPT = `You are a coding assistant running locally. You help users write, read, debug, and refactor code.
 
+You are working inside the project at: ${process.cwd()}
+
 You have access to tools that let you interact with the filesystem and run shell commands. Use them freely to understand the codebase and make changes.
 
 Guidelines:
+- When a user asks you to implement something, implement it directly in the codebase — do not explain how to do it, just do it
+- Before implementing any feature, search the codebase to check if it already exists or is partially implemented — never duplicate existing work
 - When a user mentions a file by name without a path, ALWAYS use list_files or search_files to locate it first before attempting to read it — never assume the path
-- Always read a file before editing it
+- Always read a file before editing it — understand the existing code and fit your changes into it
 - Run tests after making changes when possible
 - Be concise in your responses — show code, not lengthy explanations
 - When writing files, write complete file contents, not partial diffs
@@ -73,6 +75,7 @@ export async function runAgent(
   userMessage: string,
   history: ChatCompletionMessageParam[],
   modelName: string = MODEL_NAME,
+  onFirstToken?: () => void,
 ): Promise<void> {
   // Track where history was before this call so we can roll back on decline
   const historyLengthBefore = history.length;
@@ -113,12 +116,11 @@ export async function runAgent(
       if (firstToken && (delta?.content || delta?.tool_calls)) {
         firstToken = false;
         clearInterval(spinner);
+        onFirstToken?.();
         process.stdout.write(`\r\x1b[K`); // clear spinner line
-        process.stdout.write(chalk.cyan("\nAssistant: "));
       }
 
       if (delta?.content) {
-        process.stdout.write(delta.content);
         content += delta.content;
       }
 
@@ -137,8 +139,16 @@ export async function runAgent(
     }
 
     clearInterval(spinner);
-    if (firstToken) process.stdout.write(`\r\x1b[K`); // clear spinner if no tokens came
-    process.stdout.write("\n");
+    if (firstToken) {
+      onFirstToken?.();
+      process.stdout.write(`\r\x1b[K`);
+    }
+
+    if (content) {
+      process.stdout.write(chalk.cyan("\nAssistant:\n"));
+      process.stdout.write(renderMarkdown(content));
+      process.stdout.write("\n");
+    }
 
     const toolCalls = Object.values(toolCallAccumulator);
 

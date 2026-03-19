@@ -9,6 +9,8 @@ const CONT   = "     ";
 export class FullScreenInput {
   private rows = process.stdout.rows || 24;
   private cols = process.stdout.columns || 80;
+  private inputHistory: string[] = [];
+  private historyIdx = -1;
 
   async start(onMessage: (message: string) => Promise<void>): Promise<void> {
     const cleanup = () => {
@@ -104,9 +106,11 @@ export class FullScreenInput {
   }
 
   private readInput(): Promise<string> {
+    this.historyIdx = -1; // always reset at start of each input session
     return new Promise((resolve) => {
       let buffer = "";
       let cursorPos = 0;
+      let draftBuffer = ""; // saved draft when navigating history
 
       const redraw = () => this.drawArea(buffer, cursorPos);
 
@@ -141,6 +145,9 @@ export class FullScreenInput {
 
         // Enter — submit
         if (seq === "\r" || seq === "\n") {
+          if (buffer.trim()) {
+            this.inputHistory.unshift(buffer);
+          }
           try { process.stdin.setRawMode(false); } catch {}
           process.stdin.removeListener("data", onData);
           resolve(buffer);
@@ -156,12 +163,29 @@ export class FullScreenInput {
         // Arrow keys
         if (seq === "\x1b[A") { // Up
           const { line, col } = posToLineCol(cursorPos);
-          if (line > 0) cursorPos = lineColToPos(line - 1, col);
+          if (line > 0) {
+            // Move cursor up within multiline buffer
+            cursorPos = lineColToPos(line - 1, col);
+          } else if (this.historyIdx < this.inputHistory.length - 1) {
+            // Scroll back through history
+            if (this.historyIdx === -1) draftBuffer = buffer;
+            this.historyIdx++;
+            buffer = this.inputHistory[this.historyIdx];
+            cursorPos = buffer.length;
+          }
           redraw(); return;
         }
         if (seq === "\x1b[B") { // Down
           const { line, col } = posToLineCol(cursorPos);
-          if (line < lines().length - 1) cursorPos = lineColToPos(line + 1, col);
+          if (line < lines().length - 1) {
+            // Move cursor down within multiline buffer
+            cursorPos = lineColToPos(line + 1, col);
+          } else if (this.historyIdx > -1) {
+            // Scroll forward through history
+            this.historyIdx--;
+            buffer = this.historyIdx === -1 ? draftBuffer : this.inputHistory[this.historyIdx];
+            cursorPos = buffer.length;
+          }
           redraw(); return;
         }
         if (seq === "\x1b[C") { // Right
