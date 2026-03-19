@@ -168,7 +168,7 @@ function bash({ command }: ToolArgs): string {
 async function listFiles({ pattern, cwd }: ToolArgs): Promise<string> {
   try {
     const matches: string[] = [];
-    for await (const file of glob(pattern, { cwd: cwd ?? process.cwd() })) {
+    for await (const file of glob(pattern, { cwd: cwd ?? process.cwd(), exclude: (f) => f.includes("node_modules") })) {
       matches.push(file as string);
     }
     return matches.length > 0 ? matches.join("\n") : "(no matches)";
@@ -177,18 +177,24 @@ async function listFiles({ pattern, cwd }: ToolArgs): Promise<string> {
   }
 }
 
+const HAS_RIPGREP = (() => {
+  try { execSync("which rg", { stdio: "pipe" }); return true; } catch { return false; }
+})();
+
 function searchFiles({ pattern, path, file_glob }: ToolArgs): string {
+  const target = path ?? ".";
   try {
-    const target = path ?? ".";
-    const globFlag = file_glob ? `--glob '${file_glob}'` : "";
-    const command = `rg --no-heading -n ${globFlag} '${pattern}' ${target}`;
-    const output = execSync(command, { encoding: "utf-8", timeout: 15_000 });
-    return output || "(no matches)";
+    if (HAS_RIPGREP) {
+      const globFlag = file_glob ? `--glob '${file_glob}'` : "";
+      return execSync(`rg --no-heading -n ${globFlag} --iglob '!node_modules' '${pattern}' ${target}`, { encoding: "utf-8", timeout: 15_000 }) || "(no matches)";
+    } else {
+      const includeFlag = file_glob ? `--include='${file_glob}'` : "";
+      return execSync(`grep -rn ${includeFlag} --exclude-dir=node_modules '${pattern}' ${target}`, { encoding: "utf-8", timeout: 15_000 }) || "(no matches)";
+    }
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number };
-    // rg exits 1 when no matches — that's not an error
+    const e = err as { status?: number; stdout?: string; stderr?: string };
     if (e.status === 1) return "(no matches)";
-    return e.stderr ?? `Error running search`;
+    return e.stderr ?? "Error running search";
   }
 }
 
