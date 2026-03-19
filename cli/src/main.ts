@@ -1,4 +1,8 @@
 #!/usr/bin/env tsx
+import { config } from "dotenv";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
+config({ path: resolve(fileURLToPath(import.meta.url), "../../../.env") });
 import readline from "readline";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
@@ -12,19 +16,20 @@ const client = new OpenAI({
 });
 
 async function checkServer(): Promise<void> {
-  try {
-    const res = await fetch(`${SERVER_URL}/health`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as { status: string; model: string; model_loaded: boolean };
-    if (!data.model_loaded) {
-      console.log(chalk.yellow(`⏳ Model loading... (status: ${data.status})`));
-      process.exit(1);
+  while (true) {
+    try {
+      const res = await fetch(`${SERVER_URL}/health`);
+      if (res.ok) {
+        process.stdout.write("\n");
+        console.log(chalk.green(`✓ Connected to ${SERVER_URL}`));
+        return;
+      }
+      process.stdout.write(chalk.yellow(`\r⏳ Model loading...        `));
+      await new Promise((r) => setTimeout(r, 3000));
+    } catch {
+      process.stdout.write(chalk.yellow(`\r⏳ Waiting for server at ${SERVER_URL}...        `));
+      await new Promise((r) => setTimeout(r, 3000));
     }
-    console.log(chalk.green(`✓ Connected to ${SERVER_URL} — model: ${data.model}`));
-  } catch (err) {
-    console.error(chalk.red(`✗ Cannot reach server at ${SERVER_URL}`));
-    console.error(chalk.gray(`  Start your LLM server first, then run this again.`));
-    process.exit(1);
   }
 }
 

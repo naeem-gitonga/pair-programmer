@@ -1,5 +1,5 @@
 # LLM Service Dockerfile
-# Uses NVIDIA NGC PyTorch image with flash-attn for Qwen2.5-3B-Instruct
+# Uses NVIDIA NGC PyTorch image for Qwen3-Coder-Next
 
 FROM nvcr.io/nvidia/pytorch:25.12-py3
 
@@ -20,9 +20,12 @@ RUN pip install --no-cache-dir hatchling setuptools wheel
 # Install project dependencies
 RUN pip install --no-cache-dir ".[all]" --no-build-isolation
 
-# Install Flash Attention from source (must match installed PyTorch version)
-# MAX_JOBS limits parallel compilation to avoid OOM during build
-RUN MAX_JOBS=8 pip install flash-attn --no-build-isolation --no-cache-dir
+# Install causal-conv1d for Qwen3-Next linear attention layers
+RUN MAX_JOBS=8 pip install causal-conv1d --no-build-isolation --no-cache-dir
+
+# Install transformers from source — qwen3_next requires 4.57.0.dev0+
+# Must come last so nothing downgrades it
+RUN pip install --no-cache-dir git+https://github.com/huggingface/transformers.git
 
 # Prevent HuggingFace from downloading models during runtime
 ENV HF_HUB_OFFLINE=1
@@ -33,7 +36,7 @@ COPY src/ ./src/
 
 # Environment variables
 ENV PYTHONPATH=/app
-ENV LLM_MODEL_PATH=/app/models/qwen2.5-3b-instruct
+ENV LLM_MODEL_PATH=/app/models/qwen3-coder-next
 ENV LLM_HOST=0.0.0.0
 ENV LLM_PORT=8004
 

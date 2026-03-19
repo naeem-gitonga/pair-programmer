@@ -11,9 +11,9 @@ LLM_PORT = int(os.getenv("LLM_PORT", "8004"))
 # Model Configuration
 LLM_MODEL_PATH = os.getenv(
     "LLM_MODEL_PATH",
-    "/home/naeemgtng/projects/example-rag/llm/models/qwen2.5-3b-instruct"
+    "/home/naeemgtng/projects/pair-programer/llm/models/qwen3-coder-next"
 )
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "Qwen/Qwen3-Coder-Next")
 LLM_DEVICE = os.getenv("LLM_DEVICE", "auto")
 LLM_DTYPE = os.getenv("LLM_DTYPE", "auto")
 

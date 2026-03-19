@@ -137,9 +137,6 @@ class LLMService:
             if self._ready:
                 return
 
-            self._device = self._resolve_device()
-            dtype = self._resolve_dtype()
-
             logger.info(
                 "Loading LLM model from %s (%s)",
                 self._config.model_path,
@@ -151,20 +148,15 @@ class LLMService:
                 local_files_only=True,
             )
 
-            model_kwargs = {"local_files_only": True}
-            if dtype is not None:
-                model_kwargs["torch_dtype"] = dtype
-            if self._config.use_flash_attention:
-                model_kwargs["attn_implementation"] = "flash_attention_2"
-                logger.info("Flash Attention 2 enabled")
-
             self._model = AutoModelForCausalLM.from_pretrained(
                 self._config.model_path,
-                **model_kwargs,
+                torch_dtype="auto",
+                device_map="auto",
+                local_files_only=True,
             )
-            self._model = self._model.to(self._device)
             self._model.eval()
 
+            self._device = next(self._model.parameters()).device
             self._ready = True
             logger.info("LLM model loaded on %s", self._device)
 
@@ -187,7 +179,7 @@ class LLMService:
             return_tensors="pt",
             truncation=True,
             max_length=self._config.max_input_length,
-        ).to(self._device)
+        ).to(self._model.device)
 
     def _get_generation_kwargs(
         self,
