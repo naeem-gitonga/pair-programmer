@@ -7,6 +7,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import chalk from "chalk";
 import { toolDefinitions, executeTool } from "./tools.js";
 import { MODEL_NAME, MAX_TOKENS, TEMPERATURE } from "./config.js";
+import { renderMarkdown } from "./markdown.js";
 
 function readKey(prompt: string): Promise<string> {
   return new Promise((resolve) => {
@@ -25,9 +26,6 @@ function readKey(prompt: string): Promise<string> {
 }
 
 function showDiff(filePath: string, oldContent: string, newContent: string): void {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-
   const tmpOld = join(tmpdir(), `pair-prog-old-${basename(filePath)}`);
   const tmpNew = join(tmpdir(), `pair-prog-new-${basename(filePath)}`);
   writeFileSync(tmpOld, oldContent);
@@ -62,10 +60,14 @@ You are working inside the project at: ${process.cwd()}
 
 You have access to tools that let you interact with the filesystem and run shell commands. Use them freely to understand the codebase and make changes.
 
+HARD CONSTRAINTS — these override everything else:
+1. The bash tool has NO TTY. stdin is not a terminal. Calling setRawMode(), isatty(), or any interactive input will immediately fail with an error. Do not try. Do not retry. If a program needs keyboard input, you cannot run it — period.
+2. For keyboard shortcuts and terminal escape codes: you must ask the user to run the capture script themselves and paste the hex output. Do not guess sequences. Do not implement without the actual output. Stop and wait.
+
 Guidelines:
-- When a user asks you to implement something, give an outline of the changes in the codebase —explain the mechanisms and how it works, after your explaination
-  check that the user is in agreement with the proposed solution and proceed after they give you a response. 
-  Consider their response and feedback. You may need to make changes to your solution before proceeding, and that's ok — just be sure to check in with the user before making changes.
+- When a user asks you to implement something, give an outline of the changes in the codebase — explain the mechanisms and how it works, check that the user is in agreement, then proceed
+- Before implementing any feature, search the codebase to check if it already exists or is partially implemented — never duplicate existing work
+- When adding something similar to an existing implementation (e.g. a new keyboard shortcut), always read the existing handler first and follow the same pattern
 - When a user mentions a file by name without a path, ALWAYS use list_files or search_files to locate it first before attempting to read it — never assume the path
 - Always read a file before editing it
 - Run tests after making changes when possible
@@ -79,8 +81,6 @@ export async function runAgent(
   history: ChatCompletionMessageParam[],
   modelName: string = MODEL_NAME,
 ): Promise<void> {
-  // Track where history was before this call so we can roll back on decline
-  const historyLengthBefore = history.length;
   history.push({ role: "user", content: userMessage });
 
   // Agentic loop — continues until model stops calling tools
@@ -102,28 +102,12 @@ export async function runAgent(
       { id: string; name: string; arguments: string }
     > = {};
     let finishReason: string | null = null;
-    let firstToken = true;
-
-    // Spinner while waiting for first token
-    const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let frameIdx = 0;
-    const spinner = setInterval(() => {
-      process.stdout.write(`\r${chalk.cyan(frames[frameIdx++ % frames.length])} Thinking...  `);
-    }, 80);
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
       finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
 
-      if (firstToken && (delta?.content || delta?.tool_calls)) {
-        firstToken = false;
-        clearInterval(spinner);
-        process.stdout.write(`\r\x1b[K`); // clear spinner line
-        process.stdout.write(chalk.cyan("\nAssistant: "));
-      }
-
       if (delta?.content) {
-        process.stdout.write(delta.content);
         content += delta.content;
       }
 
@@ -141,9 +125,11 @@ export async function runAgent(
       }
     }
 
-    clearInterval(spinner);
-    if (firstToken) process.stdout.write(`\r\x1b[K`); // clear spinner if no tokens came
-    process.stdout.write("\n");
+    if (content) {
+      process.stdout.write(chalk.cyan("\nAssistant:\n"));
+      process.stdout.write(renderMarkdown(content));
+      process.stdout.write("\n");
+    }
 
     const toolCalls = Object.values(toolCallAccumulator);
 
@@ -177,8 +163,9 @@ export async function runAgent(
         if (tc.name === "write_file") {
           const allowed = await approveWriteFile(args.path, args.content ?? "");
           if (!allowed) {
-            // Roll back history to before this task so the next message starts clean
-            history.splice(historyLengthBefore);
+            // Keep history intact so the model retains context — just record the decline
+            history.push({ role: "tool", tool_call_id: tc.id, content: "User declined this file change." });
+            history.push({ role: "assistant", content: "The file change was declined. I'll wait for further instructions." });
             process.stdout.write(chalk.red("\n  Change declined. Waiting for your next instruction.\n"));
             return;
           }

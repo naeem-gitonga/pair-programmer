@@ -79,12 +79,28 @@ async function main(): Promise<void> {
       console.log(chalk.cyan("═".repeat(cols)));
       console.log();
 
-      // Spinner pinned to bottom-left — persists for the entire model generation
-      const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-      let frameIdx = 0;
+      // Animated spinner pinned to bottom-left — frame animates at 80ms, phrase changes every 5s, elapsed time shown
+      const spinFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+      const catchPhrases = [
+        "I'm trying, I'm trying...",
+        "Let me think...",
+        "Working on it...",
+        "Just a moment...",
+        "Processing...",
+        "One sec...",
+        "Almost there...",
+      ];
+      let spinIdx = 0;
+      let phraseIdx = 0;
       const spinnerRow = process.stdout.rows || 24;
+      const startTime = Date.now();
       const engageSpinner = setInterval(() => {
-        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H${chalk.hex("#FFA500")(frames[frameIdx++ % frames.length])} thinking...\x1b[u`);
+        if (spinIdx % Math.round(5000 / 80) === 0 && spinIdx > 0) phraseIdx++;
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const frame = chalk.cyan(spinFrames[spinIdx++ % spinFrames.length]);
+        const text = chalk.hex("#FFA500")(catchPhrases[phraseIdx % catchPhrases.length]);
+        const time = chalk.hex("#FFA500")(`${elapsed}s`);
+        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K${frame} ${text} ${time}\x1b[u`);
       }, 80);
 
       await runAgent(client, userMessage, history, currentModelId);
