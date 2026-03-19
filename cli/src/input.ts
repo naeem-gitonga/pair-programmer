@@ -11,6 +11,7 @@ export class FullScreenInput {
   private cols = process.stdout.columns || 80;
   private inputHistory: string[] = [];
   private historyIdx = -1;
+  private prevInputRows = MIN_INPUT_ROWS;
 
   async start(onMessage: (message: string) => Promise<void>): Promise<void> {
     const cleanup = () => {
@@ -78,11 +79,28 @@ export class FullScreenInput {
     }
   }
 
+  private visualRows(lines: string[]): number {
+    return Math.max(MIN_INPUT_ROWS, lines.reduce((total, line, i) => {
+      const prefixLen = i === 0 ? PROMPT.length : CONT.length;
+      return total + Math.max(1, Math.ceil((prefixLen + line.length) / this.cols));
+    }, 0));
+  }
+
   private drawArea(buffer: string, cursorPos: number) {
     const lines = buffer.split("\n");
-    const inputRows = Math.max(MIN_INPUT_ROWS, lines.length);
+    const inputRows = this.visualRows(lines);
     const sepRow = this.rows - SEP_ROWS - inputRows;
     const startRow = sepRow + SEP_ROWS;
+
+    // Clear leftover rows from a previously larger input area
+    if (inputRows < this.prevInputRows) {
+      const oldSepRow = this.rows - SEP_ROWS - this.prevInputRows;
+      for (let r = oldSepRow; r < sepRow; r++) {
+        this.moveTo(r, 1);
+        process.stdout.write("\x1b[K");
+      }
+    }
+    this.prevInputRows = inputRows;
 
     this.setScrollRegion(sepRow - 1);
 
@@ -160,6 +178,19 @@ export class FullScreenInput {
           process.exit(0);
         }
 
+        // Ctrl+U — clear current line only
+        if (seq === "\x15") {
+          const { line } = posToLineCol(cursorPos);
+          const ls = lines();
+          const lineStart = ls.slice(0, line).reduce((a, l) => a + l.length + 1, 0);
+          const lineEnd = lineStart + ls[line].length;
+          buffer = buffer.slice(0, lineStart) + buffer.slice(lineEnd);
+          if (buffer.endsWith("\n")) buffer = buffer.slice(0, -1);
+          cursorPos = lineStart;
+          redraw();
+          return;
+        }
+
         // Arrow keys
         if (seq === "\x1b[A") { // Up
           const { line, col } = posToLineCol(cursorPos);
@@ -202,6 +233,15 @@ export class FullScreenInput {
           if (cursorPos > 0) {
             buffer = buffer.slice(0, cursorPos - 1) + buffer.slice(cursorPos);
             cursorPos--;
+            redraw();
+          }
+          return;
+        }
+
+        // Delete key (\x1b[3~)
+        if (seq === "\x1b[3~") {
+          if (cursorPos < buffer.length) {
+            buffer = buffer.slice(0, cursorPos) + buffer.slice(cursorPos + 1);
             redraw();
           }
           return;
