@@ -1,3 +1,4 @@
 llm/models
 models/
 node_modules/
+.env*
