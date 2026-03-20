@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
 import { config } from "dotenv";
-import { resolve } from "path";
+import { resolve, join } from "path";
 import { fileURLToPath } from "url";
+import { homedir } from "os";
+import { readFileSync, existsSync } from "fs";
 config({ path: resolve(fileURLToPath(import.meta.url), "../../../.env"), quiet: true });
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
@@ -12,6 +14,20 @@ import { SERVER_URL, MODEL_NAME } from "./config.js";
 import { FullScreenInput } from "./input.js";
 import { showModelPicker } from "./model-picker.js";
 import { showSettingsPicker } from "./settings-picker.js";
+
+function readIdeContext(): string | null {
+  const contextFile = join(homedir(), ".pair-programmer", "context.json");
+  if (!existsSync(contextFile)) return null;
+  try {
+    const ctx = JSON.parse(readFileSync(contextFile, "utf-8"));
+    let msg = `[IDE context: file="${ctx.file}", language=${ctx.language}, line=${ctx.line}`;
+    if (ctx.selection) msg += `, selected text:\n${ctx.selection}`;
+    msg += "]";
+    return msg;
+  } catch {
+    return null;
+  }
+}
 
 function makeClient(url: string): OpenAI {
   return new OpenAI({ baseURL: `${url}/v1`, apiKey: "local" });
@@ -135,10 +151,13 @@ async function main(): Promise<void> {
         () => { startTime += Date.now() - pauseStart; engageSpinner = startSpinner(); },
       );
 
+      const ideContext = readIdeContext();
+      const messageWithContext = ideContext ? `${ideContext}\n\n${userMessage}` : userMessage;
+
       if (isBedrockUrl(currentUrl)) {
-        await runBedrockAgent(bedrockConfigFromUrl(currentUrl, currentModelId), userMessage, history);
+        await runBedrockAgent(bedrockConfigFromUrl(currentUrl, currentModelId), messageWithContext, history);
       } else {
-        await runAgent(client, userMessage, history, currentModelId);
+        await runAgent(client, messageWithContext, history, currentModelId);
       }
 
       clearInterval(engageSpinner);
