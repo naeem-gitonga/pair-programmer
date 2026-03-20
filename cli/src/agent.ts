@@ -6,7 +6,20 @@ import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import chalk from "chalk";
 import { toolDefinitions, executeTool } from "./tools.js";
-import { MODEL_NAME, MAX_TOKENS, TEMPERATURE } from "./config.js";
+import { MODEL_NAME, TEMPERATURE } from "./config.js";
+
+type ToolOutputMode = "limited" | "some" | "all";
+let toolOutputMode: ToolOutputMode = "limited";
+export function setToolOutputMode(mode: ToolOutputMode) { toolOutputMode = mode; }
+export function getToolOutputMode(): ToolOutputMode { return toolOutputMode; }
+
+function truncateToolOutput(output: string): string {
+  const lines = output.split("\n");
+  if (toolOutputMode === "all") return output;
+  const limit = toolOutputMode === "limited" ? 2 : 10;
+  if (lines.length <= limit) return output;
+  return lines.slice(0, limit).join("\n") + chalk.gray(`\n… (${lines.length - limit} more lines — use /settings to show more)`);
+}
 import { renderMarkdown } from "./markdown.js";
 
 function readKey(prompt: string): Promise<string> {
@@ -57,6 +70,8 @@ async function approveWriteFile(filePath: string, newContent: string): Promise<b
 const SYSTEM_PROMPT = `You are a coding assistant running locally. You help users write, read, debug, and refactor code.
 
 You are working inside the project at: ${process.cwd()}
+The project root (parent directory) is: ${new URL('../..', import.meta.url).pathname}
+Key config files like models.json live in the project root, not in the cli/ subdirectory.
 
 You have access to tools that let you interact with the filesystem and run shell commands. Use them freely to understand the codebase and make changes.
 
@@ -90,7 +105,6 @@ export async function runAgent(
       messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
       tools: toolDefinitions,
       tool_choice: "auto",
-      max_tokens: MAX_TOKENS,
       temperature: TEMPERATURE,
       stream: true,
     });
@@ -173,7 +187,7 @@ export async function runAgent(
 
         const result = await executeTool(tc.name, args);
 
-        process.stdout.write(chalk.gray(`${result.slice(0, 500)}${result.length > 500 ? "…" : ""}\n`));
+        process.stdout.write(chalk.gray(truncateToolOutput(result) + "\n"));
 
         history.push({
           role: "tool",

@@ -30,6 +30,10 @@ export class FullScreenInput {
       this.init();
     });
 
+    // Set raw mode once — keep it on for the lifetime of the app
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+
     this.init();
 
     while (true) {
@@ -42,8 +46,13 @@ export class FullScreenInput {
       this.clearArea(lines);
       const scrollEnd = this.rows - SEP_ROWS - MIN_INPUT_ROWS - 1;
       this.setScrollRegion(scrollEnd);
-      this.moveTo(scrollEnd, 1); // cursor inside scroll region so output scrolls correctly
-      await onMessage(input.trim());
+      this.moveTo(scrollEnd, 1);
+      process.stdout.write("\x1b[?25h"); // ensure cursor visible before output
+      try {
+        await onMessage(input.trim());
+      } catch (err) {
+        process.stdout.write(chalk.red(`\nError: ${(err as Error).message}\n`));
+      }
       this.drawEmpty();
     }
   }
@@ -79,26 +88,26 @@ export class FullScreenInput {
     }
   }
 
-  private visualRows(lines: string[]): number {
-    return Math.max(MIN_INPUT_ROWS, lines.reduce((total, line, i) => {
-      const prefixLen = i === 0 ? PROMPT.length : CONT.length;
-      return total + Math.max(1, Math.ceil((prefixLen + line.length) / this.cols));
-    }, 0));
-  }
-
   private drawArea(buffer: string, cursorPos: number) {
     const lines = buffer.split("\n");
-    const inputRows = this.visualRows(lines);
+
+    // Calculate total visual rows accounting for line wrapping
+    const lineVisualRowCounts = lines.map((line, i) => {
+      const pfxLen = i === 0 ? PROMPT.length : CONT.length;
+      return Math.max(1, Math.ceil((pfxLen + Math.max(1, line.length)) / this.cols));
+    });
+    const totalVisualRows = lineVisualRowCounts.reduce((a, b) => a + b, 0);
+    const inputRows = Math.max(MIN_INPUT_ROWS, totalVisualRows);
+
     const sepRow = this.rows - SEP_ROWS - inputRows;
     const startRow = sepRow + SEP_ROWS;
 
-    // Clear leftover rows from a previously larger input area
-    if (inputRows < this.prevInputRows) {
-      const oldSepRow = this.rows - SEP_ROWS - this.prevInputRows;
-      for (let r = oldSepRow; r < sepRow; r++) {
-        this.moveTo(r, 1);
-        process.stdout.write("\x1b[K");
-      }
+    // Clear from the furthest-back separator row (old or new) down — never above the scroll region
+    const oldSepRow = this.rows - SEP_ROWS - this.prevInputRows;
+    const clearFrom = Math.max(Math.min(oldSepRow, sepRow), 1);
+    for (let r = clearFrom; r < this.rows; r++) {
+      this.moveTo(r, 1);
+      process.stdout.write("\x1b[K");
     }
     this.prevInputRows = inputRows;
 
@@ -108,19 +117,44 @@ export class FullScreenInput {
     this.moveTo(sepRow, 1);
     process.stdout.write(chalk.cyan("─".repeat(this.cols)));
 
-    // Input lines
-    for (let i = 0; i < lines.length; i++) {
-      this.moveTo(startRow + i, 1);
-      process.stdout.write("\x1b[K" + (i === 0 ? chalk.bold(PROMPT) : CONT) + lines[i]);
-    }
-
-    // Place cursor at correct position
+    // Compute cursor line/col
     const before = buffer.slice(0, cursorPos);
     const beforeLines = before.split("\n");
     const cursorLine = beforeLines.length - 1;
     const cursorCol  = beforeLines[beforeLines.length - 1].length;
+
+    // Draw input lines — highlight cursor position with inverse video
+    // Track visual row offset to account for wrapped lines
+    let visualRow = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const pfx = i === 0 ? chalk.bold(PROMPT) : CONT;
+      const pfxLen = i === 0 ? PROMPT.length : CONT.length;
+      const lineVisualRows = Math.max(1, Math.ceil((pfxLen + lines[i].length) / this.cols));
+
+      // Clear all visual rows this line occupies
+      for (let v = 0; v < lineVisualRows; v++) {
+        this.moveTo(startRow + visualRow + v, 1);
+        process.stdout.write("\x1b[K");
+      }
+
+      this.moveTo(startRow + visualRow, 1);
+      if (i === cursorLine) {
+        const pre  = lines[i].slice(0, cursorCol);
+        const cur  = lines[i][cursorCol] ?? " ";
+        const post = lines[i].slice(cursorCol + 1);
+        process.stdout.write(pfx + pre + chalk.inverse(cur) + post);
+      } else {
+        process.stdout.write(pfx + lines[i]);
+      }
+
+      visualRow += lineVisualRows;
+    }
+
+    // Move terminal cursor to correct visual row (sum of visual rows before cursorLine)
+    const cursorVisualRow = lineVisualRowCounts.slice(0, cursorLine).reduce((a, b) => a + b, 0);
     const prefix = cursorLine === 0 ? PROMPT.length : CONT.length;
-    this.moveTo(startRow + cursorLine, prefix + cursorCol + 1);
+    this.moveTo(startRow + cursorVisualRow, prefix + cursorCol + 1);
+    process.stdout.write("\x1b[?25h");
   }
 
   private readInput(): Promise<string> {
@@ -147,7 +181,7 @@ export class FullScreenInput {
       };
 
       redraw();
-      process.stdin.setRawMode(true);
+      process.stdin.setRawMode(true); // ensure raw mode on each readInput
       process.stdin.resume();
 
       const onData = (data: Buffer) => {
@@ -166,7 +200,7 @@ export class FullScreenInput {
           if (buffer.trim()) {
             this.inputHistory.unshift(buffer);
           }
-          try { process.stdin.setRawMode(false); } catch {}
+          // Keep raw mode on — just swap out the listener
           process.stdin.removeListener("data", onData);
           resolve(buffer);
           return;

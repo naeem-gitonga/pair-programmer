@@ -71,7 +71,6 @@ export async function showModelPicker(
     };
 
     const cleanup = () => {
-      try { process.stdin.setRawMode(false); } catch {}
       process.stdin.removeListener("data", onData);
       process.stdout.write("\x1b[2J\x1b[H");
     };

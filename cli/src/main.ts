@@ -10,6 +10,7 @@ import { runAgent } from "./agent.js";
 import { SERVER_URL, MODEL_NAME } from "./config.js";
 import { FullScreenInput } from "./input.js";
 import { showModelPicker } from "./model-picker.js";
+import { showSettingsPicker } from "./settings-picker.js";
 
 function makeClient(url: string): OpenAI {
   return new OpenAI({ baseURL: `${url}/v1`, apiKey: "local" });
@@ -51,9 +52,15 @@ async function main(): Promise<void> {
   const processMessage = async (userMessage: string) => {
     if (userMessage.trim() === "/help") {
       console.log(chalk.bold("\nAvailable commands:"));
-      console.log(`  ${chalk.cyan("/help")}   show this help`);
-      console.log(`  ${chalk.cyan("/model")}  switch between models defined in models.json`);
+      console.log(`  ${chalk.cyan("/help")}         show this help`);
+      console.log(`  ${chalk.cyan("/model")}        switch between models defined in models.json`);
+      console.log(`  ${chalk.cyan("/settings")}  cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
       console.log();
+      return;
+    }
+
+    if (userMessage.trim() === "/settings") {
+      await showSettingsPicker();
       return;
     }
 
