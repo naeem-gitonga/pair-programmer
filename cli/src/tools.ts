@@ -3,6 +3,40 @@ import { readFileSync, writeFileSync } from "fs";
 import { glob } from "fs/promises";
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
 
+// ── Web (Tavily) ──────────────────────────────────────────────────────────────
+
+async function web({ input }: ToolArgs): Promise<string> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return "Error: TAVILY_API_KEY environment variable is not set.";
+
+  const isUrl = /^https?:\/\//i.test(input);
+
+  try {
+    if (isUrl) {
+      const res = await fetch("https://api.tavily.com/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, urls: [input] }),
+      });
+      const data = await res.json() as { results?: { url: string; raw_content: string }[] };
+      const result = data.results?.[0];
+      if (!result) return "No content extracted.";
+      return result.raw_content.slice(0, 8000);
+    } else {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, query: input, search_depth: "basic", max_results: 5 }),
+      });
+      const data = await res.json() as { results?: { title: string; url: string; content: string }[] };
+      if (!data.results?.length) return "No results found.";
+      return data.results.map(r => `${r.title}\n${r.url}\n${r.content}`).join("\n\n");
+    }
+  } catch (err) {
+    return `Error: ${(err as Error).message}`;
+  }
+}
+
 // ── Tool Definitions (sent to the model) ──────────────────────────────────────
 
 export const toolDefinitions: ChatCompletionTool[] = [
@@ -80,6 +114,20 @@ export const toolDefinitions: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "web",
+      description: "Fetch a URL and return its content, or search Google for a query and return results.",
+      parameters: {
+        type: "object",
+        properties: {
+          input: { type: "string", description: "A URL to fetch or a search query" },
+        },
+        required: ["input"],
+      },
+    },
+  },
 ];
 
 // ── Tool Implementations ───────────────────────────────────────────────────────
@@ -120,7 +168,7 @@ function bash({ command }: ToolArgs): string {
 async function listFiles({ pattern, cwd }: ToolArgs): Promise<string> {
   try {
     const matches: string[] = [];
-    for await (const file of glob(pattern, { cwd: cwd ?? process.cwd() })) {
+    for await (const file of glob(pattern, { cwd: cwd ?? process.cwd(), exclude: (f) => f.includes("node_modules") })) {
       matches.push(file as string);
     }
     return matches.length > 0 ? matches.join("\n") : "(no matches)";
@@ -129,18 +177,24 @@ async function listFiles({ pattern, cwd }: ToolArgs): Promise<string> {
   }
 }
 
+const HAS_RIPGREP = (() => {
+  try { execSync("which rg", { stdio: "pipe" }); return true; } catch { return false; }
+})();
+
 function searchFiles({ pattern, path, file_glob }: ToolArgs): string {
+  const target = path ?? ".";
   try {
-    const target = path ?? ".";
-    const globFlag = file_glob ? `--glob '${file_glob}'` : "";
-    const command = `rg --no-heading -n ${globFlag} '${pattern}' ${target}`;
-    const output = execSync(command, { encoding: "utf-8", timeout: 15_000 });
-    return output || "(no matches)";
+    if (HAS_RIPGREP) {
+      const globFlag = file_glob ? `--glob '${file_glob}'` : "";
+      return execSync(`rg --no-heading -n ${globFlag} --iglob '!node_modules' '${pattern}' ${target}`, { encoding: "utf-8", timeout: 15_000 }) || "(no matches)";
+    } else {
+      const includeFlag = file_glob ? `--include='${file_glob}'` : "";
+      return execSync(`grep -rn ${includeFlag} --exclude-dir=node_modules '${pattern}' ${target}`, { encoding: "utf-8", timeout: 15_000 }) || "(no matches)";
+    }
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number };
-    // rg exits 1 when no matches — that's not an error
+    const e = err as { status?: number; stdout?: string; stderr?: string };
     if (e.status === 1) return "(no matches)";
-    return e.stderr ?? `Error running search`;
+    return e.stderr ?? "Error running search";
   }
 }
 
@@ -153,6 +207,7 @@ export async function executeTool(name: string, args: ToolArgs): Promise<string>
     case "bash":         return bash(args);
     case "list_files":   return await listFiles(args);
     case "search_files": return searchFiles(args);
+    case "web":          return await web(args);
     default:             return `Unknown tool: ${name}`;
   }
 }

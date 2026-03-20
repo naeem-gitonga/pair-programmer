@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Qwen3-Coder-Next (local)",
+    "url": "http://localhost:8004",
+    "modelId": "Qwen3 Coder (Local)"
+  },
+  {
+    "name": "AWS Bedrock - Qwen3-Coder-Next",
+    "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "modelId": "qwen.qwen3-coder-next"
+  }
+]

@@ -1,0 +1,127 @@
+#!/bin/bash
+
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+echo "Using compose file: $COMPOSE_FILE"
+# Start services
+start() {
+    echo "Building and starting services..."
+    docker compose -f $COMPOSE_FILE up --build --force-recreate -d
+    echo "Cleaning up dangling images..."
+    docker image prune -f
+    echo "Done! Services are running."
+    echo "Showing logs (Ctrl+C to exit, services keep running)..."
+    logs
+}
+
+# Stop services
+down() {
+    echo "Stopping services..."
+    docker compose -f $COMPOSE_FILE down -v
+}
+
+# View logs
+logs() {
+    if [ -z "$1" ]; then
+        # All logs
+        docker compose -f $COMPOSE_FILE logs -f
+    else
+        # Specific service logs
+        docker compose -f $COMPOSE_FILE logs --tail 500 "$1"
+    fi
+}
+
+logsf() {
+    # All logs
+    docker compose -f $COMPOSE_FILE logs -f "$1"
+}
+
+# Restart service
+restart() {
+    if [ -z "$1" ]; then
+        echo "Error: Please specify service name"
+        echo "Usage: ./scripts restart <service>"
+        echo "Services: stt, tts, gateway, auth, webapp, mongo"
+        exit 1
+    fi
+    echo "Restarting $1..."
+    docker compose -f $COMPOSE_FILE restart "$1"
+}
+
+# Rebuild service
+rebuild() {
+    if [ -z "$1" ]; then
+        echo "Error: Please specify service name"
+        echo "Usage: ./scripts rebuild <service>"
+        echo "Services: stt, tts, gateway, auth, webapp"
+        exit 1
+    fi
+    echo "Rebuilding $1..."
+    docker compose -f $COMPOSE_FILE up -d --build --force-recreate "$1"
+    echo "Cleaning up dangling images..."
+    docker image prune -f
+}
+
+# Show help
+help() {
+    echo "Available commands:"
+    echo "  start            - Build and start all services"
+    echo "  down             - Stop all services"
+    echo "  logs [service]   - View logs (all or specific service)"
+    echo "  restart <service> - Restart a specific service"
+    echo "  rebuild <service> - Rebuild a specific service"
+    echo "  dbstate          - Show LanceDB journal entries state"
+    echo "  migrate-lancedb  - Add owner_id/owner_type columns to LanceDB"
+    echo "  setup            - Setup environment (download models, etc.)"
+    echo "  npminstall       - Install npm dependencies for all components"
+    echo ""
+    echo "Examples:"
+    echo "  ./scripts start"
+    echo "  ./scripts logs stt"
+    echo "  ./scripts restart gateway"
+    echo "  ./scripts rebuild tts"
+}
+
+# Main command router
+case "$1" in
+    start)
+        start
+        ;;
+    down)
+        down
+        ;;
+    logs)
+        logs "$2"
+        ;;
+    logsf)
+        logsf "$2"
+        ;;
+    restart)
+        restart "$2"
+        ;;
+    rebuild)
+        rebuild "$2"
+        ;;
+    dbstate)
+        dbstate
+        ;;
+    help|--help|-h|"")
+        help
+        ;;
+    setup)
+        setup
+        ;;
+    npminstall)
+        npminstall
+        ;;
+    deletelancedbrows)
+        deletelancedbrows
+        ;;
+    migrate-lancedb)
+        migrate_lancedb
+        ;;
+    *)
+        echo "Error: Unknown command '$1'"
+        help
+        exit 1
+        ;;
+esac

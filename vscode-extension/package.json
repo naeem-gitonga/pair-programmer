@@ -1,0 +1,22 @@
+{
+  "name": "pair-programmer-context",
+  "displayName": "Pair Programmer Context",
+  "description": "Sends active file and selection context to the pair programmer CLI",
+  "publisher": "GTNG-Inc",
+  "version": "0.0.1",
+  "repository": { "type": "git", "url": "https://github.com/naeem-gitonga/pair-programmer.git" },
+  "engines": { "vscode": "^1.111.0" },
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {},
+  "license": "MIT",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/vscode": "^1.110.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,22 @@
+services:
+  llm:
+    build:
+      context: ./llamacpp
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./llamacpp/models:/models
+    environment:
+      ENV: production
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
