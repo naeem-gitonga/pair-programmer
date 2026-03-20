@@ -61,16 +61,78 @@ rebuild() {
     docker image prune -f
 }
 
+# Install client components (CLI + VS Code extension) — run on the machine you code on
+install-client() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    echo "==> Installing CLI dependencies..."
+    cd "$SCRIPT_DIR/cli" && npm install
+    echo "    ✓ CLI ready"
+
+    echo ""
+    echo "==> Building VS Code extension..."
+    cd "$SCRIPT_DIR/vscode-extension" && npm install && npm run compile && npx vsce package --no-dependencies
+    VSIX=$(ls "$SCRIPT_DIR/vscode-extension"/*.vsix | head -1)
+    echo "    Installing extension..."
+    code --install-extension "$VSIX"
+    echo "    ✓ VS Code extension installed"
+
+    echo ""
+    echo "All done!"
+    echo "Run 'pair' from any directory to start."
+    echo "If your LLM server is on a remote machine, set the URL via /settings > Local Server URL."
+}
+
+# Install server components (llama.cpp Docker image) — run on the machine hosting the model
+install-server() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    GGUF="$SCRIPT_DIR/llamacpp/models/qwen3-coder-next-q4_k_m.gguf"
+
+    echo "==> Checking for model..."
+    if [ ! -f "$GGUF" ]; then
+        echo ""
+        echo "ERROR: Model not found at:"
+        echo "  $GGUF"
+        echo ""
+        echo "To get the model, either:"
+        echo "  1. Download Qwen3-Coder-Next safetensors into models/qwen3-coder-next/"
+        echo "     then run: ./llamacpp/quantize.sh"
+        echo ""
+        echo "  2. Download a pre-quantized GGUF and place it at:"
+        echo "     $GGUF"
+        echo ""
+        exit 1
+    fi
+    echo "    ✓ Model found"
+
+    echo ""
+    echo "==> Building Docker image..."
+    cd "$SCRIPT_DIR" && docker compose build
+    echo "    ✓ Docker image built"
+
+    echo ""
+    echo "All done! Run './scripts run-server' to start the LLM server."
+}
+
+# Start the LLM server (run on the server machine)
+run-server() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    echo "==> Starting LLM server..."
+    cd "$SCRIPT_DIR" && docker compose up -d
+    echo "    ✓ LLM server running on port 8004"
+}
+
 # Show help
 help() {
     echo "Available commands:"
+    echo "  install-client   - Install CLI globally + VS Code extension (run on your coding machine)"
+    echo "  install-server   - Check model and build Docker image (run on the machine hosting the model)"
+    echo "  run-server       - Start the LLM server via Docker"
     echo "  start            - Build and start all services"
     echo "  down             - Stop all services"
     echo "  logs [service]   - View logs (all or specific service)"
     echo "  restart <service> - Restart a specific service"
     echo "  rebuild <service> - Rebuild a specific service"
-    echo "  dbstate          - Show LanceDB journal entries state"
-    echo "  migrate-lancedb  - Add owner_id/owner_type columns to LanceDB"
     echo "  setup            - Setup environment (download models, etc.)"
     echo "  npminstall       - Install npm dependencies for all components"
     echo ""
@@ -83,6 +145,15 @@ help() {
 
 # Main command router
 case "$1" in
+    install-client)
+        install-client
+        ;;
+    install-server)
+        install-server
+        ;;
+    run-server)
+        run-server
+        ;;
     start)
         start
         ;;

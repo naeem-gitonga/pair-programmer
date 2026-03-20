@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { runAgent, runBedrockAgent, setApprovalCallbacks } from "./agent.js";
 import { isBedrockUrl, bedrockConfigFromUrl } from "./bedrock-client.js";
 import { SERVER_URL, MODEL_NAME } from "./config.js";
+import { readAppConfig } from "./persist.js";
 import { FullScreenInput } from "./input.js";
 import { showModelPicker } from "./model-picker.js";
 import { showSettingsPicker } from "./settings-picker.js";
@@ -61,7 +62,8 @@ async function main(): Promise<void> {
   const history: ChatCompletionMessageParam[] = [];
   const input = new FullScreenInput();
 
-  let currentUrl = SERVER_URL;
+  const savedConfig = readAppConfig();
+  let currentUrl = savedConfig.localServerUrl ?? SERVER_URL;
   let currentModelId = MODEL_NAME;
   let client = makeClient(currentUrl);
 
@@ -94,7 +96,12 @@ async function main(): Promise<void> {
     }
 
     if (userMessage.trim() === "/settings") {
-      await showSettingsPicker();
+      const changes = await showSettingsPicker();
+      if (changes.localServerUrl && changes.localServerUrl !== currentUrl) {
+        currentUrl = changes.localServerUrl;
+        client = makeClient(currentUrl);
+        console.log(chalk.green(`\nLocal server URL updated to: ${currentUrl}\n`));
+      }
       return;
     }
 
