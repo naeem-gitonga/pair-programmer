@@ -5,8 +5,8 @@
     "modelId": "Qwen3 Coder (Local)"
   },
   {
-    "name": "My AWS Model",
-    "url": "https://your-aws-endpoint.com",
-    "modelId": "your-model-id"
+    "name": "AWS Bedrock - Qwen3-Coder-Next",
+    "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "modelId": "qwen.qwen3-coder-next"
   }
 ]
