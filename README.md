@@ -2,6 +2,11 @@
 
 A local AI coding assistant powered by llama.cpp or AWS Bedrock. Run it from any directory and it operates within that project. Includes a VS Code extension that automatically sends your active file and selection as context with every message.
 
+**Disclaimer** I didn't write any tests for this. I just wanted to get something up
+and running. Normally I would let AI write the test but for the sake of iterating
+I decided to forego my usual DevOps duties so I could get this out and work on 
+other stuff that took priority. And... yeah.
+
 ## Architecture
 
 ```

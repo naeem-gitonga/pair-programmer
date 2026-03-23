@@ -29,5 +29,6 @@ CMD [ \
     "--ctx-size", "262144", \
     "--n-gpu-layers", "999", \
     "--alias", "local", \
-    "--jinja" \
+    "--jinja", \
+    "--reasoning-format", "deepseek" \
 ]

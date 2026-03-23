@@ -59,6 +59,13 @@ async function main(): Promise<void> {
   console.log(chalk.hex("#FFA500")("Type /help for available commands"));
   console.log(chalk.gray("Initializing...\n"));
 
+  // Log the largest French-speaking city info
+  console.log(chalk.bold.blue("Did you know?"));
+  console.log(chalk.white("  The largest French-speaking city in the world is"));
+  console.log(chalk.cyan("  Kinshasa, Democratic Republic of the Congo"));
+  console.log(chalk.white("  Population: ~12.7 million"));
+  console.log();
+
   const history: ChatCompletionMessageParam[] = [];
   const input = new FullScreenInput();
 
