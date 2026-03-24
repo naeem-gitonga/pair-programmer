@@ -65,9 +65,9 @@ rebuild() {
 install-client() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-    echo "==> Installing CLI dependencies..."
-    cd "$SCRIPT_DIR/cli" && npm install
-    echo "    ✓ CLI ready"
+    echo "==> Installing CLI..."
+    cd "$SCRIPT_DIR/cli" && npm install && npm install -g .
+    echo "    ✓ CLI installed globally (pair)"
 
     echo ""
     echo "==> Building VS Code extension..."
