@@ -9,6 +9,7 @@ import { toolDefinitions, executeTool } from "./tools.js";
 import { MODEL_NAME, TEMPERATURE } from "./config.js";
 import { createBedrockClient, streamBedrock, type BedrockConfig } from "./bedrock-client.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
+import { approveWriteFileVSCode } from "./vscode-diff.js";
 
 type ToolOutputMode = "limited" | "some" | "all";
 let toolOutputMode: ToolOutputMode = "limited";
@@ -34,6 +35,16 @@ import { renderMarkdown } from "./markdown.js";
 function readKey(prompt: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write(prompt);
+    if (!process.stdin.isTTY) {
+      // Non-TTY (child process mode): read response line from stdin
+      process.stdin.resume();
+      const onData = (data: Buffer) => {
+        process.stdin.removeListener("data", onData);
+        resolve(data.toString().toLowerCase().trim()[0] ?? "n");
+      };
+      process.stdin.once("data", onData);
+      return;
+    }
     const onData = (data: Buffer) => {
       process.stdin.setRawMode(false);
       process.stdin.removeListener("data", onData);
@@ -163,7 +174,8 @@ export async function runAgent(
         process.stdout.write(chalk.yellow(`\n[tool] ${tc.name}(${JSON.stringify(displayArgs)})\n`));
 
         if (tc.name === "write_file") {
-          const allowed = await approveWriteFile(args.path, args.content ?? "");
+          const vsCodeResult = await approveWriteFileVSCode(args.path, args.content ?? "", readKey, _onApprovalPause, _onApprovalResume);
+          const allowed = vsCodeResult !== null ? vsCodeResult : await approveWriteFile(args.path, args.content ?? "");
           if (!allowed) {
             // Keep history intact so the model retains context — just record the decline
             history.push({ role: "tool", tool_call_id: tc.id, content: "User declined this file change." });
@@ -234,7 +246,8 @@ export async function runBedrockAgent(
         process.stdout.write(chalk.yellow(`\n[tool] ${tc.name}(${JSON.stringify(displayArgs)})\n`));
 
         if (tc.name === "write_file") {
-          const allowed = await approveWriteFile(args.path, args.content ?? "");
+          const vsCodeResult = await approveWriteFileVSCode(args.path, args.content ?? "", readKey, _onApprovalPause, _onApprovalResume);
+          const allowed = vsCodeResult !== null ? vsCodeResult : await approveWriteFile(args.path, args.content ?? "");
           if (!allowed) {
             history.push({ role: "tool", tool_call_id: tc.id, content: "User declined this file change." });
             history.push({ role: "assistant", content: "The file change was declined. I'll wait for further instructions." });

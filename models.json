@@ -2,11 +2,19 @@
   {
     "name": "Qwen3-Coder-Next (local)",
     "url": "http://localhost:8004",
-    "modelId": "Qwen3 Coder (Local)"
+    "modelId": "Qwen3 Coder (Local)",
+    "purpose": "text"
+  },
+  {
+    "name": "SmolVLM2-500M-Video",
+    "url": "http://localhost:8005",
+    "modelId": "smolvlm2",
+    "purpose": "imagevid"
   },
   {
     "name": "AWS Bedrock - Qwen3-Coder-Next",
     "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
-    "modelId": "qwen.qwen3-coder-next"
+    "modelId": "qwen.qwen3-coder-next",
+    "purpose": "text"
   }
 ]
