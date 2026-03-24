@@ -17,6 +17,7 @@ RUN cmake -B build \
     -DLLAMA_BUILD_TESTS=OFF \
     -DLLAMA_BUILD_EXAMPLES=OFF \
     -DLLAMA_SERVER=ON \
+    -DCMAKE_CUDA_ARCHITECTURES=121 \
     && cmake --build build --config Release --target llama-server -j$(nproc)
 
 ENV PATH="/app/build/bin:$PATH"
