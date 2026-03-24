@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import chalk from "chalk";
-import { toolDefinitions, executeTool } from "./tools.js";
+import { toolDefinitions, executeTool } from "./tools/tools.js";
 import { MODEL_NAME, TEMPERATURE } from "./config.js";
 import { createBedrockClient, streamBedrock, type BedrockConfig } from "./bedrock-client.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
