@@ -1,0 +1,19 @@
+FROM vllm/vllm-openai:latest
+
+RUN pip install num2words
+
+# Expose port for SmolVLM2
+EXPOSE 8005
+
+# Set environment variables
+ENV PORT=8005
+ENV SMOLVLM_MODEL_PATH=/models/smolvlm2
+
+# Run vLLM with full system access for reading any file
+CMD ["/models/smolvlm2", \
+     "--host", "0.0.0.0", \
+     "--port", "8005", \
+     "--allowed-local-media-path", "/", \
+     "--dtype", "auto", \
+     "--enforce-eager", \
+     "--gpu-memory-utilization", "0.1"]

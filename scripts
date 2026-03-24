@@ -40,7 +40,7 @@ restart() {
     if [ -z "$1" ]; then
         echo "Error: Please specify service name"
         echo "Usage: ./scripts restart <service>"
-        echo "Services: stt, tts, gateway, auth, webapp, mongo"
+        echo "Services: llm, smolvlm2"
         exit 1
     fi
     echo "Restarting $1..."
@@ -52,7 +52,7 @@ rebuild() {
     if [ -z "$1" ]; then
         echo "Error: Please specify service name"
         echo "Usage: ./scripts rebuild <service>"
-        echo "Services: stt, tts, gateway, auth, webapp"
+        echo "Services: llm, smolvlm2"
         exit 1
     fi
     echo "Rebuilding $1..."
@@ -83,15 +83,18 @@ install-client() {
     echo "If your LLM server is on a remote machine, set the URL via /settings > Local Server URL."
 }
 
-# Install server components (llama.cpp Docker image) — run on the machine hosting the model
+# Install server components (llama.cpp + SmolVLM2 Docker images) — run on the machine hosting the models
 install-server() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     GGUF="$SCRIPT_DIR/llamacpp/models/qwen3-coder-next-q4_k_m.gguf"
+    SMOLVLM_MODELS="$SCRIPT_DIR/vllm/models/smolvlm2"
 
-    echo "==> Checking for model..."
+    echo "==> Checking for models..."
+    
+    # Check Qwen3 model
     if [ ! -f "$GGUF" ]; then
         echo ""
-        echo "ERROR: Model not found at:"
+        echo "ERROR: Qwen3 model not found at:"
         echo "  $GGUF"
         echo ""
         echo "To get the model, either:"
@@ -103,44 +106,67 @@ install-server() {
         echo ""
         exit 1
     fi
-    echo "    ✓ Model found"
+    echo "    ✓ Qwen3 model found"
+
+    # Check SmolVLM2 models
+    if [ ! -d "$SMOLVLM_MODELS" ] || [ -z "$(ls -A $SMOLVLM_MODELS 2>/dev/null)" ]; then
+        echo ""
+        echo "WARNING: SmolVLM2 model directory not found or empty at:"
+        echo "  $SMOLVLM_MODELS"
+        echo ""
+        echo "SmolVLM2 is optional. To enable vision capabilities:"
+        echo "  1. Download SmolVLM2-500M-Video-Instruct into vllm/models/smolvlm2/"
+        echo "     from HuggingFace"
+        echo ""
+    else
+        echo "    ✓ SmolVLM2 model found"
+    fi
 
     echo ""
-    echo "==> Building Docker image..."
+    echo "==> Building Docker images..."
     cd "$SCRIPT_DIR" && docker compose build
-    echo "    ✓ Docker image built"
+    echo "    ✓ Docker images built"
 
     echo ""
-    echo "All done! Run './scripts run-server' to start the LLM server."
+    echo "All done! Run './scripts run-server' to start the LLM servers."
 }
 
-# Start the LLM server (run on the server machine)
+# Start the LLM servers (run on the server machine)
 run-server() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    echo "==> Starting LLM server..."
+    echo "==> Starting LLM servers..."
     cd "$SCRIPT_DIR" && docker compose up -d
-    echo "    ✓ LLM server running on port 8004"
+    echo "    ✓ Qwen3 server running on port 8004"
+    echo "    ✓ SmolVLM2 server running on port 8005"
+}
+
+# Start only SmolVLM2 server
+run-smolvlm2() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    echo "==> Starting SmolVLM2 server..."
+    docker compose -f $COMPOSE_FILE up -d smolvlm2
+    echo "    ✓ SmolVLM2 server running on port 8005"
 }
 
 # Show help
 help() {
     echo "Available commands:"
     echo "  install-client   - Install CLI globally + VS Code extension (run on your coding machine)"
-    echo "  install-server   - Check model and build Docker image (run on the machine hosting the model)"
-    echo "  run-server       - Start the LLM server via Docker"
+    echo "  install-server   - Check models and build Docker image (run on the machine hosting the models)"
+    echo "  run-server       - Start the LLM servers (Qwen3 on 8004, SmolVLM2 on 8005)"
+    echo "  run-smolvlm2     - Start only SmolVLM2 server (on port 8005)"
     echo "  start            - Build and start all services"
     echo "  down             - Stop all services"
     echo "  logs [service]   - View logs (all or specific service)"
-    echo "  restart <service> - Restart a specific service"
+    echo "  restart <service> - Restart a specific service (llm, smolvlm2)"
     echo "  rebuild <service> - Rebuild a specific service"
-    echo "  setup            - Setup environment (download models, etc.)"
-    echo "  npminstall       - Install npm dependencies for all components"
     echo ""
     echo "Examples:"
     echo "  ./scripts start"
-    echo "  ./scripts logs stt"
-    echo "  ./scripts restart gateway"
-    echo "  ./scripts rebuild tts"
+    echo "  ./scripts logs llm"
+    echo "  ./scripts logs smolvlm2"
+    echo "  ./scripts restart smolvlm2"
+    echo "  ./scripts rebuild llm"
 }
 
 # Main command router
@@ -153,6 +179,9 @@ case "$1" in
         ;;
     run-server)
         run-server
+        ;;
+    run-smolvlm2)
+        run-smolvlm2
         ;;
     start)
         start
@@ -172,23 +201,8 @@ case "$1" in
     rebuild)
         rebuild "$2"
         ;;
-    dbstate)
-        dbstate
-        ;;
     help|--help|-h|"")
         help
-        ;;
-    setup)
-        setup
-        ;;
-    npminstall)
-        npminstall
-        ;;
-    deletelancedbrows)
-        deletelancedbrows
-        ;;
-    migrate-lancedb)
-        migrate_lancedb
         ;;
     *)
         echo "Error: Unknown command '$1'"

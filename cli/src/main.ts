@@ -93,16 +93,20 @@ async function main(): Promise<void> {
   }
 
   const processMessage = async (userMessage: string) => {
-    if (userMessage.trim() === "/help") {
+    const trimmed = userMessage.trim();
+    
+    if (trimmed === "/help") {
       console.log(chalk.bold("\nAvailable commands:"));
       console.log(`  ${chalk.cyan("/help")}         show this help`);
       console.log(`  ${chalk.cyan("/model")}        switch between models defined in models.json`);
-      console.log(`  ${chalk.cyan("/settings")}  cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
+      console.log(`  ${chalk.cyan("/model text")}   switch to text models only`);
+      console.log(`  ${chalk.cyan("/model image")}  switch to image/video models only`);
+      console.log(`  ${chalk.cyan("/settings")}   cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
       console.log();
       return;
     }
 
-    if (userMessage.trim() === "/settings") {
+    if (trimmed === "/settings") {
       const changes = await showSettingsPicker();
       if (changes.localServerUrl && changes.localServerUrl !== currentUrl) {
         currentUrl = changes.localServerUrl;
@@ -112,8 +116,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (userMessage.trim() === "/model") {
-      const picked = await showModelPicker(currentModelId, currentUrl);
+    // Handle /model with optional purpose filter
+    if (trimmed.startsWith("/model")) {
+      const purpose = trimmed.split(" ")[1]?.trim();
+      const picked = await showModelPicker(currentModelId, currentUrl, purpose);
       if (picked) {
         const switched = picked.modelId !== currentModelId || picked.url !== currentUrl;
         currentModelId = picked.modelId;
@@ -127,14 +133,16 @@ async function main(): Promise<void> {
     }
 
     try {
-      const cols = process.stdout.columns;
-      console.log(chalk.cyan("═".repeat(cols)));
-      console.log(chalk.bold("\n  YOU:"));
-      console.log(chalk.white(`  ${userMessage}\n`));
-      console.log(chalk.cyan("═".repeat(cols)));
-      console.log();
+      if (process.stdout.isTTY) {
+        const cols = process.stdout.columns;
+        console.log(chalk.cyan("═".repeat(cols)));
+        console.log(chalk.bold("\n  YOU:"));
+        console.log(chalk.white(`  ${userMessage}\n`));
+        console.log(chalk.cyan("═".repeat(cols)));
+        console.log();
+      }
 
-      // Animated spinner pinned to bottom-left — frame animates at 80ms, phrase changes every 5s, elapsed time shown
+      // Animated spinner — only in TTY mode
       const spinFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
       const catchPhrases = [
         "I'm trying, I'm trying...",
@@ -149,20 +157,23 @@ async function main(): Promise<void> {
       let phraseIdx = 0;
       const spinnerRow = process.stdout.rows || 24;
       let startTime = Date.now();
-      const startSpinner = () => setInterval(() => {
-        if (spinIdx % Math.round(5000 / 80) === 0 && spinIdx > 0) phraseIdx++;
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const frame = chalk.cyan(spinFrames[spinIdx++ % spinFrames.length]);
-        const text = chalk.hex("#FFA500")(catchPhrases[phraseIdx % catchPhrases.length]);
-        const time = chalk.hex("#FFA500")(`${elapsed}s`);
-        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K${frame} ${text} ${time}\x1b[u`);
-      }, 80);
+      const startSpinner = (): NodeJS.Timeout | null => {
+        if (!process.stdout.isTTY) return null;
+        return setInterval(() => {
+          if (spinIdx % Math.round(5000 / 80) === 0 && spinIdx > 0) phraseIdx++;
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          const frame = chalk.cyan(spinFrames[spinIdx++ % spinFrames.length]);
+          const text = chalk.hex("#FFA500")(catchPhrases[phraseIdx % catchPhrases.length]);
+          const time = chalk.hex("#FFA500")(`${elapsed}s`);
+          process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K${frame} ${text} ${time}\x1b[u`);
+        }, 80);
+      };
       let engageSpinner = startSpinner();
 
       let pauseStart = 0;
       setApprovalCallbacks(
-        () => { clearInterval(engageSpinner); pauseStart = Date.now(); },
-        () => { startTime += Date.now() - pauseStart; engageSpinner = startSpinner(); },
+        () => { if (engageSpinner) clearInterval(engageSpinner); pauseStart = Date.now(); input.pause(); },
+        () => { startTime += Date.now() - pauseStart; engageSpinner = startSpinner(); input.resume(); },
       );
 
       const ideContext = readIdeContext();
@@ -174,12 +185,14 @@ async function main(): Promise<void> {
         await runAgent(client, messageWithContext, history, currentModelId);
       }
 
-      clearInterval(engageSpinner);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      const elapsedText = chalk.hex("#FFA500")(`⏱ ${elapsed}s`);
-      const elapsedPlain = `⏱ ${elapsed}s`;
-      const col = Math.max(1, (process.stdout.columns || 80) - elapsedPlain.length);
-      process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K\x1b[${spinnerRow};${col}H${elapsedText}\x1b[u`);
+      if (engageSpinner) clearInterval(engageSpinner);
+      if (process.stdout.isTTY) {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const elapsedText = chalk.hex("#FFA500")(`⏱ ${elapsed}s`);
+        const elapsedPlain = `⏱ ${elapsed}s`;
+        const col = Math.max(1, (process.stdout.columns || 80) - elapsedPlain.length);
+        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K\x1b[${spinnerRow};${col}H${elapsedText}\x1b[u`);
+      }
     } catch (err) {
       console.error(chalk.red(`\nError: ${(err as Error).message}`));
     }
