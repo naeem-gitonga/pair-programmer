@@ -89,11 +89,11 @@ function convertHistory(messages: ChatCompletionMessageParam[]) {
         role: "assistant",
         content: [
           ...(msg.content ? [{ text: msg.content }] : []),
-          ...msg.tool_calls.map((tc) => ({
+          ...msg.tool_calls.filter((tc) => tc.type === "function").map((tc) => ({
             toolUse: {
               toolUseId: tc.id,
-              name: tc.function.name,
-              input: JSON.parse(tc.function.arguments),
+              name: (tc as { type: "function"; function: { name: string; arguments: string } }).function.name,
+              input: JSON.parse((tc as { type: "function"; function: { name: string; arguments: string } }).function.arguments),
             },
           })),
         ],
@@ -114,13 +114,16 @@ function convertHistory(messages: ChatCompletionMessageParam[]) {
 }
 
 function convertTools(tools: ChatCompletionTool[]): any[] {
-  return tools.map((t) => ({
-    toolSpec: {
-      name: t.function.name,
-      description: t.function.description,
-      inputSchema: { json: t.function.parameters ?? {} },
-    },
-  }));
+  return tools.filter((t) => t.type === "function").map((t) => {
+    const fn = (t as { type: "function"; function: { name: string; description?: string; parameters?: object } }).function;
+    return {
+      toolSpec: {
+        name: fn.name,
+        description: fn.description,
+        inputSchema: { json: fn.parameters ?? {} },
+      },
+    };
+  });
 }
 
 // ── Streaming ──────────────────────────────────────────────────────────────────
