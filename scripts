@@ -66,6 +66,7 @@ install-client() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
     echo "==> Installing CLI..."
+    npm install -g tsx
     cd "$SCRIPT_DIR/cli" && npm install && npm install -g .
     echo "    ✓ CLI installed globally (pair)"
 
