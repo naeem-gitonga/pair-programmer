@@ -3,8 +3,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-const CONTEXT_FILE = path.join(os.homedir(), ".pair-programmer", "context.json");
-const CLOSE_SIGNAL = path.join(os.homedir(), ".pair-programmer", "close-editors.json");
+const SIGNAL_DIR   = path.join(os.homedir(), ".pair-programmer");
+const CONTEXT_FILE = path.join(SIGNAL_DIR, "context.json");
+const OPEN_SIGNAL  = path.join(SIGNAL_DIR, "open-diff.json");
+const CLOSE_SIGNAL = path.join(SIGNAL_DIR, "close-editors.json");
 
 function writeContext(): void {
   const editor = vscode.window.activeTextEditor;
@@ -45,26 +47,54 @@ async function closeEditorsByPath(paths: string[]): Promise<void> {
   }
 }
 
-function watchCloseSignal(context: vscode.ExtensionContext): void {
-  const dir = path.dirname(CLOSE_SIGNAL);
-  fs.mkdirSync(dir, { recursive: true });
+function watchSignals(context: vscode.ExtensionContext): void {
+  fs.mkdirSync(SIGNAL_DIR, { recursive: true });
 
-  const watcher = fs.watch(dir, async (_event, filename) => {
-    if (filename !== path.basename(CLOSE_SIGNAL)) return;
+  const dirUri = vscode.Uri.file(SIGNAL_DIR);
+
+  // Watch for open-diff signal — open diff in VS Code without stealing focus
+  const openWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(dirUri, path.basename(OPEN_SIGNAL))
+  );
+  const handleOpen = async () => {
+    if (!fs.existsSync(OPEN_SIGNAL)) return;
+    try {
+      const { old: oldPath, new: newPath, label } = JSON.parse(fs.readFileSync(OPEN_SIGNAL, "utf-8"));
+      fs.unlinkSync(OPEN_SIGNAL);
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        vscode.Uri.file(oldPath),
+        vscode.Uri.file(newPath),
+        `${label}: original ↔ proposed`,
+        { preview: true, preserveFocus: true }
+      );
+    } catch { /* ignore */ }
+  };
+  context.subscriptions.push(openWatcher.onDidCreate(handleOpen));
+  context.subscriptions.push(openWatcher.onDidChange(handleOpen));
+  context.subscriptions.push(openWatcher);
+
+  // Watch for close-editors signal
+  const closeWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(dirUri, path.basename(CLOSE_SIGNAL))
+  );
+  const handleClose = async () => {
     if (!fs.existsSync(CLOSE_SIGNAL)) return;
     try {
       const paths: string[] = JSON.parse(fs.readFileSync(CLOSE_SIGNAL, "utf-8"));
       fs.unlinkSync(CLOSE_SIGNAL);
       await closeEditorsByPath(paths);
+      await vscode.commands.executeCommand("workbench.action.terminal.focus");
     } catch { /* ignore */ }
-  });
-
-  context.subscriptions.push({ dispose: () => watcher.close() });
+  };
+  context.subscriptions.push(closeWatcher.onDidCreate(handleClose));
+  context.subscriptions.push(closeWatcher.onDidChange(handleClose));
+  context.subscriptions.push(closeWatcher);
 }
 
 export function activate(context: vscode.ExtensionContext): void {
   writeContext();
-  watchCloseSignal(context);
+  watchSignals(context);
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => writeContext()),
     vscode.window.onDidChangeTextEditorSelection(() => writeContext()),
