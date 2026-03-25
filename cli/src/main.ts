@@ -16,6 +16,11 @@ import { FullScreenInput } from "./input.js";
 import { showModelPicker, loadModels } from "./model-picker.js";
 import { showSettingsPicker } from "./settings-picker.js";
 
+/** Normalize \r\n and bare \r to \n so terminal output doesn't clobber lines. */
+function normalizeNewlines(s: string): string {
+  return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function readIdeContext(): string | null {
   const contextFile = join(homedir(), ".pair-programmer", "context.json");
   if (!existsSync(contextFile)) return null;
@@ -103,8 +108,6 @@ async function main(): Promise<void> {
       console.log(chalk.bold("\nAvailable commands:"));
       console.log(`  ${chalk.cyan("/help")}         show this help`);
       console.log(`  ${chalk.cyan("/model")}        switch between models defined in models.json`);
-      console.log(`  ${chalk.cyan("/model text")}   switch to text models only`);
-      console.log(`  ${chalk.cyan("/model image")}  switch to image/video models only`);
       console.log(`  ${chalk.cyan("/settings")}   cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
       console.log();
       return;
@@ -141,7 +144,8 @@ async function main(): Promise<void> {
         const cols = process.stdout.columns;
         console.log(chalk.cyan("═".repeat(cols)));
         console.log(chalk.bold("\n  YOU:"));
-        console.log(chalk.white(`  ${userMessage}\n`));
+        const indented = normalizeNewlines(userMessage).split("\n").map(l => "  " + l).join("\n");
+        console.log(chalk.white(indented) + "\n");
         console.log(chalk.cyan("═".repeat(cols)));
         console.log();
       }

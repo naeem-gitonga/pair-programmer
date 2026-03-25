@@ -4,6 +4,11 @@ const PROMPT = "You: ";
 const SHIFT_ENTER = ["\x1b[13;2u", "\x1b[27;2;13~", "\x1b\r"];
 const PASTE_INLINE_THRESHOLD = 150; // pastes shorter than this render as plain text
 
+/** Normalize \r\n and bare \r to \n so terminal output doesn't clobber lines. */
+function normalizeNewlines(s: string): string {
+  return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 export class FullScreenInput {
   private history: string[] = [];
   private historyIdx = -1;
@@ -74,10 +79,22 @@ export class FullScreenInput {
         if (activePaste >= pastes.length) activePaste = -1;
       };
 
-      const draw = () => {
-        if (prevLines > 1) process.stdout.write(`\x1b[${prevLines - 1}A`);
-        process.stdout.write("\r\x1b[J");
+      // ── helpers for bottom-anchored positioning ──────────────────────────────
+      const rows = () => (process.stdout.isTTY ? process.stdout.rows : 24) || 24;
+      const cols = () => (process.stdout.isTTY ? process.stdout.columns : 80) || 80;
+      const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 
+      /** Count terminal rows a rendered line occupies (accounting for wrapping). */
+      const lineRows = (line: string) =>
+        Math.max(1, Math.ceil(stripAnsi(line).length / cols()));
+
+      /** Move cursor to the first row of the input area (bottom-anchored). */
+      const gotoInputTop = (numLines: number) => {
+        const startRow = Math.max(1, rows() - numLines + 1);
+        process.stdout.write(`\x1b[${startRow};1H`);
+      };
+
+      const draw = () => {
         const curs = (ch: string | undefined) => {
           const c = ch ?? " ";
           return c === "\n" ? chalk.inverse(" ") + "\n" : chalk.inverse(c);
@@ -136,16 +153,24 @@ export class FullScreenInput {
           out += buffer.slice(pos);
         }
 
-        const cols = (process.stdout.isTTY ? process.stdout.columns : 80) || 80;
-        const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
         const lines = out.split("\n");
-        const rendered = lines.map((l, i) => (i === 0 ? chalk.bold(PROMPT) : "     ") + l);
-        process.stdout.write(rendered.join("\n"));
+        const inputLines = lines.map((l, i) => (i === 0 ? chalk.bold(PROMPT) : "     ") + l);
+
+        // Separator line — full terminal width, thick and noticeable
+        const separator = chalk.bold.cyan("━".repeat(cols()));
+
+        // Prepend the separator; it always occupies exactly 1 terminal row
+        const rendered = [separator, ...inputLines];
+
         // Count actual terminal rows, accounting for line wrapping
-        prevLines = rendered.reduce((sum, line) => {
-          const vis = stripAnsi(line).length;
-          return sum + Math.max(1, Math.ceil(vis / cols));
-        }, 0);
+        const newPrevLines = rendered.reduce((sum, line) => sum + lineRows(line), 0);
+
+        // Jump to the top of where the input area will be rendered (bottom-anchored)
+        gotoInputTop(newPrevLines);
+        process.stdout.write("\x1b[J"); // erase from here to end of screen
+        process.stdout.write(rendered.join("\n"));
+
+        prevLines = newPrevLines;
       };
 
       if (process.stdin.isTTY) process.stdin.setRawMode(true);
@@ -208,15 +233,19 @@ export class FullScreenInput {
 
         // ── Enter — submit ────────────────────────────────────────────────────
         if (seq === "\r" || seq === "\n") {
-          // Clear draw area BEFORE disabling raw mode — setRawMode(false) echoes
-          // the Enter keystroke as a newline, which shifts the cursor down one row
-          // and causes the move-up calculation to clear the wrong rows.
-          if (prevLines > 1) process.stdout.write(`\x1b[${prevLines - 1}A`);
-          process.stdout.write("\r\x1b[J");
+          // Clear just the input area, move to the last row, and emit a newline
+          // so subsequent output flows naturally below — no full-screen wipe,
+          // which would destroy scroll-back and truncate large pastes.
+          gotoInputTop(prevLines);
+          process.stdout.write("\x1b[J"); // erase input area only
+          process.stdout.write(`\x1b[${rows()};1H`); // move to bottom row
+          process.stdout.write("\n"); // push cursor below bottom-anchor line
           if (process.stdout.isTTY) process.stdout.write("\x1b[?25h");
           if (process.stdin.isTTY) process.stdin.setRawMode(false);
           process.stdin.removeListener("data", onData);
-          resolve(buffer);
+          // Normalize line endings before resolving so \r\n and bare \r don't
+          // cause terminal lines to overwrite each other in the YOU: block.
+          resolve(normalizeNewlines(buffer));
           return;
         }
 

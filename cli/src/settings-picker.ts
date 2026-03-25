@@ -15,6 +15,10 @@ const SETTINGS = [
   { key: "local-server-url",  label: "Local server URL" },
 ];
 
+function setRaw(on: boolean) {
+  if (process.stdin.isTTY) process.stdin.setRawMode(on);
+}
+
 function renderMenu(title: string, items: string[], selected: number, hint = "↑↓ navigate · Enter select · Esc back") {
   process.stdout.write("\x1b[2J\x1b[H");
   process.stdout.write(chalk.bold(`  ${title}\n\n`));
@@ -38,6 +42,7 @@ function pickFromList<T extends { label: string; desc?: string }>(
       selected,
     );
 
+    setRaw(true);
     render();
 
     const onData = (data: Buffer) => {
@@ -60,18 +65,24 @@ function promptText(label: string, current: string): Promise<string> {
 
     let input = "";
 
+    setRaw(true);
+
     const onData = (data: Buffer) => {
       const seq = data.toString();
+
+      // Esc or Ctrl+C — cancel
       if (seq === "\x1b" || seq === "\x03") {
         process.stdin.removeListener("data", onData);
         resolve(current);
         return;
       }
+      // Enter — confirm
       if (seq === "\r" || seq === "\n") {
         process.stdin.removeListener("data", onData);
         resolve(input.trim() || current);
         return;
       }
+      // Backspace
       if (seq === "\x7f" || seq === "\b") {
         if (input.length > 0) {
           input = input.slice(0, -1);
@@ -79,6 +90,9 @@ function promptText(label: string, current: string): Promise<string> {
         }
         return;
       }
+      // Ignore all other escape sequences (arrow keys, function keys, etc.)
+      if (seq.startsWith("\x1b")) return;
+      // Printable characters only
       if (seq.length === 1 && seq.charCodeAt(0) >= 32) {
         input += seq;
         process.stdout.write(seq);
@@ -99,6 +113,9 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
     if (s.key === "local-server-url") return `${s.label}  ${chalk.gray(config.localServerUrl ?? "http://localhost:8004")}`;
     return s.label;
   });
+
+  setRaw(true);
+  process.stdin.resume();
 
   while (true) {
     const idx = await new Promise<number | null>((resolve) => {
@@ -131,8 +148,14 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
         writeAppConfig({ localServerUrl: newUrl });
       }
     }
+
+    // Re-enter raw mode after returning from a sub-menu (pickFromList/promptText
+    // may have briefly yielded control; ensure raw mode is still on for the
+    // parent settings loop).
+    setRaw(true);
   }
 
+  setRaw(false);
   process.stdout.write("\x1b[2J\x1b[H");
   return changes;
 }
