@@ -16,5 +16,11 @@
     "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
     "modelId": "qwen.qwen3-coder-next",
     "purpose": "text"
+  },
+  {
+    "name": "AWS Bedrock - Claude Sonnet 4.6",
+    "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
+    "modelId": "us.anthropic.claude-sonnet-4-6",
+    "purpose": "text"
   }
 ]
