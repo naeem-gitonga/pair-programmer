@@ -187,19 +187,27 @@ async function main(): Promise<void> {
       const ideContext = readIdeContext();
       const messageWithContext = ideContext ? `${ideContext}\n\n${userMessage}` : userMessage;
 
+      // Stop the spinner and erase it BEFORE the agent prints any output.
+      // The spinner uses \x1b[s/\x1b[u (save/restore cursor) which is safe while
+      // nothing is scrolling — but once runAgent starts writing and the terminal
+      // scrolls, the saved cursor position drifts off-screen. Clearing first
+      // ensures the response always appears at the correct scroll position.
+      if (engageSpinner) clearInterval(engageSpinner);
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\x1b[${spinnerRow};1H\x1b[K`); // erase spinner line
+      }
+
       if (isBedrockUrl(currentUrl)) {
         await runBedrockAgent(bedrockConfigFromUrl(currentUrl, currentModelId), messageWithContext, history);
       } else {
         await runAgent(client, messageWithContext, history, currentModelId);
       }
 
-      if (engageSpinner) clearInterval(engageSpinner);
+      // Print elapsed time inline — no cursor gymnastics needed since the
+      // terminal has already scrolled to its natural position after the response.
       if (process.stdout.isTTY) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const elapsedText = chalk.hex("#FFA500")(`⏱ ${elapsed}s`);
-        const elapsedPlain = `⏱ ${elapsed}s`;
-        const col = Math.max(1, (process.stdout.columns || 80) - elapsedPlain.length);
-        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K\x1b[${spinnerRow};${col}H${elapsedText}\x1b[u`);
+        process.stdout.write(chalk.hex("#FFA500")(`⏱ ${elapsed}s\n`));
       }
     } catch (err) {
       console.error(chalk.red(`\nError: ${(err as Error).message}`));

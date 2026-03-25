@@ -1,20 +1,45 @@
 import chalk from "chalk";
 
+const cols = () => (process.stdout.isTTY ? process.stdout.columns : 80) || 80;
+
+/**
+ * Word-wrap a plain-text string to `width` columns, preserving any leading
+ * indent on the first segment (passed as `prefix` — already printed before
+ * this call, so subsequent lines need the same indent).
+ */
+function wordWrap(text: string, width: number, indent = ""): string[] {
+  if (text.length <= width) return [text];
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? current + " " + word : word;
+    if (candidate.length <= width) {
+      current = candidate;
+    } else {
+      if (current) lines.push(current);
+      // If a single word exceeds width, let it overflow rather than break mid-word
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  // Join continuation lines with the indent
+  return lines.length === 0 ? [""] : lines.map((l, i) => (i === 0 ? l : indent + l));
+}
+
 export function renderMarkdown(text: string): string {
   const lines = text.split("\n");
   const out: string[] = [];
   let inCodeBlock = false;
-  let codeLang = "";
   let codeLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Code block start/end
+    // Code block start/end — never word-wrap code
     if (line.startsWith("```")) {
       if (!inCodeBlock) {
         inCodeBlock = true;
-        codeLang = line.slice(3).trim();
         codeLines = [];
       } else {
         inCodeBlock = false;
@@ -37,7 +62,7 @@ export function renderMarkdown(text: string): string {
 
     // Horizontal rule
     if (/^[-*_]{3,}$/.test(line.trim())) {
-      out.push(chalk.gray("─".repeat(process.stdout.columns || 80)));
+      out.push(chalk.gray("─".repeat(cols())));
       continue;
     }
 
@@ -45,7 +70,10 @@ export function renderMarkdown(text: string): string {
     if (/^(\s*)[-*+] /.test(line)) {
       const indent = line.match(/^(\s*)/)?.[1] ?? "";
       const content = line.replace(/^\s*[-*+] /, "");
-      out.push(indent + chalk.hex("#FFA500")("•") + " " + renderInline(content));
+      const prefix = indent + "• ";
+      const wrapWidth = cols() - prefix.length;
+      const wrapped = wordWrap(content, wrapWidth, " ".repeat(prefix.length));
+      out.push(indent + chalk.hex("#FFA500")("•") + " " + wrapped.map(renderInline).join("\n"));
       continue;
     }
 
@@ -53,21 +81,28 @@ export function renderMarkdown(text: string): string {
     if (/^\d+\. /.test(line)) {
       const num = line.match(/^(\d+)\. /)?.[1] ?? "";
       const content = line.replace(/^\d+\. /, "");
-      out.push(chalk.hex("#FFA500")(num + ".") + " " + renderInline(content));
+      const prefix = num + ". ";
+      const wrapWidth = cols() - prefix.length;
+      const wrapped = wordWrap(content, wrapWidth, " ".repeat(prefix.length));
+      out.push(chalk.hex("#FFA500")(num + ".") + " " + wrapped.map(renderInline).join("\n"));
       continue;
     }
 
     // Blockquote
     if (line.startsWith("> ")) {
-      out.push(chalk.gray("│ ") + chalk.italic(renderInline(line.slice(2))));
+      const content = line.slice(2);
+      const wrapWidth = cols() - 2; // "│ " prefix
+      const wrapped = wordWrap(content, wrapWidth, "  ");
+      out.push(wrapped.map(seg => chalk.gray("│ ") + chalk.italic(renderInline(seg))).join("\n"));
       continue;
     }
 
     // Empty line
     if (line.trim() === "") { out.push(""); continue; }
 
-    // Regular paragraph
-    out.push(renderInline(line));
+    // Regular paragraph — wrap to terminal width
+    const wrapped = wordWrap(line, cols());
+    out.push(wrapped.map(renderInline).join("\n"));
   }
 
   return out.join("\n");
