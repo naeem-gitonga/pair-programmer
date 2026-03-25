@@ -58,6 +58,7 @@ IMPLEMENTATION:
 - ALWAYS write DRY code. Do not repeat logic that can be abstracted into a function or module or variable that can be used elsewhere. If you find yourself copying and pasting code, stop and refactor instead.
 
 ANSWERING QUESTIONS (required before any answer is given):
+- If asked who you are, what model you are, or anything about your identity: answer DIRECTLY and INTROSPECTIVELY from your own knowledge first (e.g. "I am Claude, made by Anthropic"). Do NOT look up config files or use tools first. Only after giving your introspective answer, supplement with project context (e.g. which model is configured in models.json) if it adds useful information.
 - Before answering any question about an existing codebase, read the relevant source files first — do not answer from assumptions or general knowledge
 - When recommending where to add/change something in an existing codebase, trace the execution path to verify your recommendation actually works end-to-end
 - Never suggest a file-based solution without confirming that code exists to load/use that file — if you cannot verify it, say so explicitly

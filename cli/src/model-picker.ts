@@ -10,7 +10,7 @@ export interface ModelConfig {
   purpose?: string;
 }
 
-function loadModels(): ModelConfig[] {
+export function loadModels(): ModelConfig[] {
   const configPath = resolve(fileURLToPath(import.meta.url), "../../../models.json");
   if (!existsSync(configPath)) return [];
   try {

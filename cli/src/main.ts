@@ -13,7 +13,7 @@ import { isBedrockUrl, bedrockConfigFromUrl } from "./bedrock-client.js";
 import { SERVER_URL, MODEL_NAME } from "./config.js";
 import { readAppConfig } from "./persist.js";
 import { FullScreenInput } from "./input.js";
-import { showModelPicker } from "./model-picker.js";
+import { showModelPicker, loadModels } from "./model-picker.js";
 import { showSettingsPicker } from "./settings-picker.js";
 
 function readIdeContext(): string | null {
@@ -80,7 +80,11 @@ async function main(): Promise<void> {
       if (connected) break;
 
       console.log(chalk.red(`✗ Server at ${currentUrl} is unavailable.`));
-      const picked = await showModelPicker(currentModelId, currentUrl);
+
+      // Derive the purpose of the failing model so the picker opens on the right category
+      const failingPurpose = loadModels().find(m => m.url === currentUrl)?.purpose;
+
+      const picked = await showModelPicker(currentModelId, currentUrl, failingPurpose);
       if (!picked) {
         console.log(chalk.gray("No model selected. Exiting."));
         process.exit(1);
