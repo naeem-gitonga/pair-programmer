@@ -16,6 +16,11 @@ import { FullScreenInput } from "./input.js";
 import { showModelPicker, loadModels } from "./model-picker.js";
 import { showSettingsPicker } from "./settings-picker.js";
 
+/** Normalize \r\n and bare \r to \n so terminal output doesn't clobber lines. */
+function normalizeNewlines(s: string): string {
+  return s.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function readIdeContext(): string | null {
   const contextFile = join(homedir(), ".pair-programmer", "context.json");
   if (!existsSync(contextFile)) return null;
@@ -103,8 +108,6 @@ async function main(): Promise<void> {
       console.log(chalk.bold("\nAvailable commands:"));
       console.log(`  ${chalk.cyan("/help")}         show this help`);
       console.log(`  ${chalk.cyan("/model")}        switch between models defined in models.json`);
-      console.log(`  ${chalk.cyan("/model text")}   switch to text models only`);
-      console.log(`  ${chalk.cyan("/model image")}  switch to image/video models only`);
       console.log(`  ${chalk.cyan("/settings")}   cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
       console.log();
       return;
@@ -141,7 +144,8 @@ async function main(): Promise<void> {
         const cols = process.stdout.columns;
         console.log(chalk.cyan("═".repeat(cols)));
         console.log(chalk.bold("\n  YOU:"));
-        console.log(chalk.white(`  ${userMessage}\n`));
+        const indented = normalizeNewlines(userMessage).split("\n").map(l => "  " + l).join("\n");
+        console.log(chalk.white(indented) + "\n");
         console.log(chalk.cyan("═".repeat(cols)));
         console.log();
       }
@@ -183,19 +187,27 @@ async function main(): Promise<void> {
       const ideContext = readIdeContext();
       const messageWithContext = ideContext ? `${ideContext}\n\n${userMessage}` : userMessage;
 
+      // Stop the spinner and erase it BEFORE the agent prints any output.
+      // The spinner uses \x1b[s/\x1b[u (save/restore cursor) which is safe while
+      // nothing is scrolling — but once runAgent starts writing and the terminal
+      // scrolls, the saved cursor position drifts off-screen. Clearing first
+      // ensures the response always appears at the correct scroll position.
+      if (engageSpinner) clearInterval(engageSpinner);
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\x1b[${spinnerRow};1H\x1b[K`); // erase spinner line
+      }
+
       if (isBedrockUrl(currentUrl)) {
         await runBedrockAgent(bedrockConfigFromUrl(currentUrl, currentModelId), messageWithContext, history);
       } else {
         await runAgent(client, messageWithContext, history, currentModelId);
       }
 
-      if (engageSpinner) clearInterval(engageSpinner);
+      // Print elapsed time inline — no cursor gymnastics needed since the
+      // terminal has already scrolled to its natural position after the response.
       if (process.stdout.isTTY) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const elapsedText = chalk.hex("#FFA500")(`⏱ ${elapsed}s`);
-        const elapsedPlain = `⏱ ${elapsed}s`;
-        const col = Math.max(1, (process.stdout.columns || 80) - elapsedPlain.length);
-        process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K\x1b[${spinnerRow};${col}H${elapsedText}\x1b[u`);
+        process.stdout.write(chalk.hex("#FFA500")(`⏱ ${elapsed}s\n`));
       }
     } catch (err) {
       console.error(chalk.red(`\nError: ${(err as Error).message}`));

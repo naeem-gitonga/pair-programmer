@@ -193,8 +193,6 @@ When the assistant proposes a file change, it opens a diff in VS Code for review
 | Command | Description |
 |---------|-------------|
 | `/model` | Switch between all models defined in `models.json` |
-| `/model text` | Switch to text models only |
-| `/model image` | Switch to image/video models only |
 | `/settings` | Open settings (tool output verbosity, server URLs) |
 | `/help` | Show available commands |
 
