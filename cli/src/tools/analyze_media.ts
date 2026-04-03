@@ -2,6 +2,7 @@ import { homedir } from "os";
 import { existsSync, readFileSync } from "fs";
 import { resolve, dirname, join, extname } from "path";
 import { execSync } from "child_process";
+import { readAppConfig } from "../persist.js";
 
 function mimeType(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
@@ -26,7 +27,7 @@ export const analyze_media_definition = {
 } as const;
 
 export async function analyzeMedia({ media_path, query }: ToolArgs): Promise<string> {
-  const serverUrl = process.env.SMOLVLM_SERVER_URL || "http://localhost:8005";
+  const serverUrl = readAppConfig().smolvlmServerUrl ?? "http://localhost:8005";
   
   try {
     let fullPath = media_path;
