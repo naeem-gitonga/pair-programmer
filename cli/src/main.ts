@@ -3,7 +3,7 @@ import { config } from "dotenv";
 import { resolve, join } from "path";
 import { fileURLToPath } from "url";
 import { homedir } from "os";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 config({ path: resolve(fileURLToPath(import.meta.url), "../../../.env"), quiet: true });
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
@@ -131,7 +131,9 @@ async function main(): Promise<void> {
       console.log(chalk.bold("\nAvailable commands:"));
       console.log(`  ${chalk.cyan("/help")}         show this help`);
       console.log(`  ${chalk.cyan("/model")}        switch between models defined in models.json`);
-      console.log(`  ${chalk.cyan("/settings")}   cycle tool output verbosity: limited (2 lines) → some (10 lines) → all`);
+      console.log(`  ${chalk.cyan("/settings")}     edit server URLs, AWS profile, tool output verbosity`);
+      console.log(`  ${chalk.cyan("/logs")}         show recent log entries`);
+      console.log(`  ${chalk.cyan("/logs clear")}   clear the log file`);
       console.log();
       return;
     }
@@ -143,6 +145,28 @@ async function main(): Promise<void> {
         client = makeClient(currentUrl);
         console.log(chalk.green(`\nLocal server URL updated to: ${currentUrl}\n`));
       }
+      return;
+    }
+
+    if (trimmed === "/logs" || trimmed === "/logs clear") {
+      if (trimmed === "/logs clear") {
+        writeFileSync(log.file, "");
+        console.log(chalk.green("\nLog file cleared.\n"));
+        return;
+      }
+      if (!existsSync(log.file)) {
+        console.log(chalk.gray("\nNo log file yet.\n"));
+        return;
+      }
+      const lines = readFileSync(log.file, "utf-8").trim().split("\n");
+      const recent = lines.slice(-50);
+      console.log(chalk.bold(`\nLast ${recent.length} log entries (${log.file}):\n`));
+      for (const line of recent) {
+        if (line.includes("] ERROR:")) console.log(chalk.red(line));
+        else if (line.includes("] WARN:"))  console.log(chalk.yellow(line));
+        else console.log(chalk.gray(line));
+      }
+      console.log();
       return;
     }
 
