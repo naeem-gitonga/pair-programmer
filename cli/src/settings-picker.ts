@@ -92,6 +92,12 @@ export function promptText(label: string, current: string): Promise<string> {
         }
         return;
       }
+      // Cmd+Backspace / Ctrl+U — clear entire input
+      if (seq === "\x15") {
+        process.stdout.write("\b \b".repeat(input.length));
+        input = "";
+        return;
+      }
       // Bracketed paste — strip the markers and insert the content
       if (seq.includes("\x1b[200~")) {
         const start = seq.indexOf("\x1b[200~") + 6;
