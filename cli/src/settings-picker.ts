@@ -92,12 +92,22 @@ export function promptText(label: string, current: string): Promise<string> {
         }
         return;
       }
+      // Bracketed paste — strip the markers and insert the content
+      if (seq.includes("\x1b[200~")) {
+        const start = seq.indexOf("\x1b[200~") + 6;
+        const end = seq.includes("\x1b[201~") ? seq.indexOf("\x1b[201~") : seq.length;
+        const pasted = seq.slice(start, end).replace(/[\r\n]/g, "");
+        input += pasted;
+        process.stdout.write(pasted);
+        return;
+      }
       // Ignore all other escape sequences (arrow keys, function keys, etc.)
       if (seq.startsWith("\x1b")) return;
-      // Printable characters only
-      if (seq.length === 1 && seq.charCodeAt(0) >= 32) {
-        input += seq;
-        process.stdout.write(seq);
+      // Printable characters — handle single keypresses and multi-char paste bursts
+      const printable = seq.split("").filter(c => c.charCodeAt(0) >= 32).join("");
+      if (printable) {
+        input += printable;
+        process.stdout.write(printable);
       }
     };
 
