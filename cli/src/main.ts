@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { runAgent, runBedrockAgent, setApprovalCallbacks } from "./agent.js";
 import { isBedrockUrl, bedrockConfigFromUrl } from "./bedrock-client.js";
 import { SERVER_URL, MODEL_NAME } from "./config.js";
+import { log } from "./logger.js";
 import { readAppConfig } from "./persist.js";
 import { FullScreenInput } from "./input.js";
 import { showModelPicker, loadModels } from "./model-picker.js";
@@ -59,7 +60,10 @@ async function checkServer(url: string, maxRetries = 3): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  log.info(`Starting Pair Programmer (server: ${SERVER_URL})`);
   console.log(chalk.bold("\nPair Programmer"));
+  console.log(chalk.gray(`Log's dir: ${log.dir}`));
+  console.log(chalk.gray(`Log file: ${log.file}`));
   console.log(chalk.gray(`Server: ${SERVER_URL}`));
   console.log(chalk.hex("#FFA500")("Type /help for available commands"));
   console.log(chalk.gray("Initializing...\n"));
@@ -210,6 +214,7 @@ async function main(): Promise<void> {
         process.stdout.write(chalk.hex("#FFA500")(`⏱ ${elapsed}s\n`));
       }
     } catch (err) {
+      log.error("Agent error", err);
       console.error(chalk.red(`\nError: ${(err as Error).message}`));
     }
   };

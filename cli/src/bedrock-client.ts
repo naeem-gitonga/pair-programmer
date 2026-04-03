@@ -3,6 +3,7 @@ import {
   ConverseStreamCommand,
 } from "@aws-sdk/client-bedrock-runtime";
 import { fromIni, fromEnv } from "@aws-sdk/credential-providers";
+import { log } from "./logger.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
 import type { ChatCompletionTool } from "openai/resources/chat/completions.js";
 
@@ -37,6 +38,8 @@ export function createBedrockClient(config: BedrockConfig): BedrockRuntimeClient
     : process.env.AWS_ACCESS_KEY_ID
       ? fromEnv()
       : undefined;
+
+  log.info(`Creating Bedrock client`, { region: config.region, modelId: config.modelId, profile: profile ?? "(default chain)" });
 
   return new BedrockRuntimeClient({ region: config.region, credentials });
 }
@@ -142,7 +145,14 @@ export async function streamBedrock(
     toolConfig: { tools: convertTools(tools) },
   });
 
-  const response = await client.send(command);
+  log.info(`Sending Bedrock request`, { modelId: config.modelId, messageCount: messages.length });
+  let response;
+  try {
+    response = await client.send(command);
+  } catch (err) {
+    log.error("Bedrock request failed", err);
+    throw err;
+  }
   if (!response.stream) throw new Error("No stream in Bedrock response");
 
   let content = "";
