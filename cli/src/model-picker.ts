@@ -2,6 +2,8 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 import chalk from "chalk";
+import { readAppConfig } from "./persist.js";
+import { SERVER_URL } from "./config.js";
 
 export interface ModelConfig {
   name: string;
@@ -13,11 +15,17 @@ export interface ModelConfig {
 export function loadModels(): ModelConfig[] {
   const configPath = resolve(fileURLToPath(import.meta.url), "../../../models.json");
   if (!existsSync(configPath)) return [];
+  let models: ModelConfig[];
   try {
-    return JSON.parse(readFileSync(configPath, "utf-8")) as ModelConfig[];
+    models = JSON.parse(readFileSync(configPath, "utf-8")) as ModelConfig[];
   } catch {
     return [];
   }
+  const { localServerUrl } = readAppConfig();
+  if (localServerUrl && localServerUrl !== SERVER_URL) {
+    models = models.map(m => m.url === SERVER_URL ? { ...m, url: localServerUrl } : m);
+  }
+  return models;
 }
 
 function groupModelsByPurpose(models: ModelConfig[]): Record<string, ModelConfig[]> {
@@ -90,7 +98,8 @@ async function pickPurpose(currentPurpose: string | undefined): Promise<string |
         resolve(purposes[selected]);
         return;
       }
-      if (seq === "\x1b" || seq === "\x03") {
+      if (seq === "\x03") { process.stdin.setRawMode(false); process.stdout.write("\x1b[2J\x1b[H"); process.exit(0); }
+      if (seq === "\x1b") {
         process.stdin.removeListener("data", onData);
         process.stdout.write("\x1b[2J\x1b[H");
         resolve(null);
@@ -168,7 +177,8 @@ export async function showModelPicker(
       if (seq === "\x1b[B") { selected = Math.min(filteredModels.length - 1, selected + 1); render(); return; }
 
       if (seq === "\r" || seq === "\n") { cleanup(); resolve(filteredModels[selected]); return; }
-      if (seq === "\x1b" || seq === "\x03") { cleanup(); resolve(null); return; }
+      if (seq === "\x03") { cleanup(); process.stdin.setRawMode(false); process.exit(0); }
+      if (seq === "\x1b") { cleanup(); resolve(null); return; }
     };
 
     const cleanup = () => {

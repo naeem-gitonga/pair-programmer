@@ -13,6 +13,8 @@ const TOOL_OUTPUT_MODES: { value: ToolOutputMode; label: string; desc: string }[
 const SETTINGS = [
   { key: "tool-output",       label: "Tool output verbosity" },
   { key: "local-server-url",  label: "Local server URL" },
+  { key: "smolvlm-server-url", label: "SmolVLM server URL" },
+  { key: "aws-profile",       label: "AWS profile" },
 ];
 
 function setRaw(on: boolean) {
@@ -56,7 +58,7 @@ function pickFromList<T extends { label: string; desc?: string }>(
   });
 }
 
-function promptText(label: string, current: string): Promise<string> {
+export function promptText(label: string, current: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write("\x1b[2J\x1b[H");
     process.stdout.write(chalk.bold(`  ${label}\n\n`));
@@ -111,6 +113,8 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
   const getValues = () => SETTINGS.map((s) => {
     if (s.key === "tool-output") return `${s.label}  ${chalk.gray(getToolOutputMode())}`;
     if (s.key === "local-server-url") return `${s.label}  ${chalk.gray(config.localServerUrl ?? "http://localhost:8004")}`;
+    if (s.key === "smolvlm-server-url") return `${s.label}  ${chalk.gray(config.smolvlmServerUrl ?? "http://localhost:8005")}`;
+    if (s.key === "aws-profile") return `${s.label}  ${chalk.gray(config.awsProfile ?? "(default)")}`;
     return s.label;
   });
 
@@ -146,6 +150,26 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
         config.localServerUrl = newUrl;
         changes.localServerUrl = newUrl;
         writeAppConfig({ localServerUrl: newUrl });
+      }
+    }
+
+    if (SETTINGS[idx].key === "smolvlm-server-url") {
+      const current = config.smolvlmServerUrl ?? "http://localhost:8005";
+      const newUrl = await promptText("SmolVLM Server URL", current);
+      if (newUrl !== current) {
+        config.smolvlmServerUrl = newUrl;
+        changes.smolvlmServerUrl = newUrl;
+        writeAppConfig({ smolvlmServerUrl: newUrl });
+      }
+    }
+
+    if (SETTINGS[idx].key === "aws-profile") {
+      const current = config.awsProfile ?? "";
+      const newProfile = await promptText("AWS Profile  (leave blank for default)", current);
+      if (newProfile !== current) {
+        config.awsProfile = newProfile || undefined;
+        changes.awsProfile = newProfile || undefined;
+        writeAppConfig({ awsProfile: newProfile || undefined });
       }
     }
 

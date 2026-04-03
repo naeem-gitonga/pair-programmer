@@ -12,10 +12,10 @@ import { runAgent, runBedrockAgent, setApprovalCallbacks } from "./agent.js";
 import { isBedrockUrl, bedrockConfigFromUrl } from "./bedrock-client.js";
 import { SERVER_URL, MODEL_NAME } from "./config.js";
 import { log } from "./logger.js";
-import { readAppConfig } from "./persist.js";
+import { readAppConfig, writeAppConfig } from "./persist.js";
 import { FullScreenInput } from "./input.js";
 import { showModelPicker, loadModels } from "./model-picker.js";
-import { showSettingsPicker } from "./settings-picker.js";
+import { showSettingsPicker, promptText } from "./settings-picker.js";
 
 /** Normalize \r\n and bare \r to \n so terminal output doesn't clobber lines. */
 function normalizeNewlines(s: string): string {
@@ -78,7 +78,25 @@ async function main(): Promise<void> {
   const history: ChatCompletionMessageParam[] = [];
   const input = new FullScreenInput();
 
-  const savedConfig = readAppConfig();
+  let savedConfig = readAppConfig();
+
+  // First-run prompts — only ask if value hasn't been saved yet
+  if (savedConfig.smolvlmServerUrl === undefined) {
+    const url = await promptText("SmolVLM Server URL (vision/video model)", "http://localhost:8005");
+    savedConfig.smolvlmServerUrl = url;
+    writeAppConfig({ smolvlmServerUrl: url });
+  }
+  if (savedConfig.awsProfile === undefined) {
+
+    const profile = await promptText("\n\n\nAWS Profile  (leave blank to use default)", "");
+    savedConfig.awsProfile = profile || undefined;
+    writeAppConfig({ awsProfile: profile || undefined });
+  }
+  if (savedConfig.awsProfile) {
+    process.env.AWS_PROFILE = savedConfig.awsProfile;
+    log.info(`Using AWS profile: ${savedConfig.awsProfile}`);
+  }
+
   let currentUrl = savedConfig.localServerUrl ?? SERVER_URL;
   let currentModelId = MODEL_NAME;
   let client = makeClient(currentUrl);
@@ -90,8 +108,9 @@ async function main(): Promise<void> {
 
       console.log(chalk.red(`✗ Server at ${currentUrl} is unavailable.`));
 
-      // Derive the purpose of the failing model so the picker opens on the right category
-      const failingPurpose = loadModels().find(m => m.url === currentUrl)?.purpose;
+      // Derive the purpose of the failing model so the picker opens on the right category.
+      // Default to "text" so the picker skips the purpose selection step on startup.
+      const failingPurpose = loadModels().find(m => m.url === currentUrl)?.purpose ?? "text";
 
       const picked = await showModelPicker(currentModelId, currentUrl, failingPurpose);
       if (!picked) {

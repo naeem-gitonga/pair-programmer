@@ -7,6 +7,8 @@ const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 export interface AppConfig {
   localServerUrl?: string;
+  smolvlmServerUrl?: string;
+  awsProfile?: string;
 }
 
 export function readAppConfig(): AppConfig {
