@@ -32,6 +32,40 @@ function truncateToolOutput(output: string): string {
 }
 import { renderMarkdown } from "./markdown.js";
 
+/**
+ * Fallback for models that don't emit API-level tool_calls.
+ * Extracts {"tool": "...", "args": {...}} objects from code fences or bare text.
+ */
+function extractTextToolCalls(content: string): Array<{ id: string; name: string; arguments: string }> {
+  const calls: Array<{ id: string; name: string; arguments: string }> = [];
+
+  // Prefer code-fenced JSON blocks, then fall back to bare JSON containing "tool"
+  const candidates: string[] = [];
+  const fenceRegex = /```(?:\w+)?\s*([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = fenceRegex.exec(content)) !== null) candidates.push(m[1].trim());
+
+  if (candidates.length === 0) {
+    // Heuristic: grab everything between the first { and the last } on lines containing "tool"
+    const bareRegex = /\{[\s\S]*?"tool"[\s\S]*?\}/g;
+    while ((m = bareRegex.exec(content)) !== null) candidates.push(m[0]);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed.tool && typeof parsed.tool === "string" && parsed.args && typeof parsed.args === "object") {
+        calls.push({
+          id: `text-${Date.now()}-${calls.length}`,
+          name: parsed.tool,
+          arguments: JSON.stringify(parsed.args),
+        });
+      }
+    } catch { /* ignore */ }
+  }
+  return calls;
+}
+
 function readKey(prompt: string): Promise<string> {
   return new Promise((resolve) => {
     process.stdout.write(prompt);
@@ -138,25 +172,41 @@ export async function runAgent(
       }
     }
 
-    if (content) {
+    const apiToolCalls = Object.values(toolCallAccumulator);
+    const textToolCalls = apiToolCalls.length === 0 ? extractTextToolCalls(content) : [];
+    const toolCalls = apiToolCalls.length > 0 ? apiToolCalls : textToolCalls;
+    const usingTextFallback = textToolCalls.length > 0;
+
+    // Strip text-based tool call JSON blocks from displayed content so the user
+    // sees the prose but not the raw JSON the model was instructed to emit.
+    const displayContent = usingTextFallback
+      ? content.replace(/```(?:\w+)?\s*\{[\s\S]*?"tool"[\s\S]*?\}\s*```/g, "").trim()
+      : content;
+
+    if (displayContent) {
       process.stdout.write(chalk.cyan("\nAssistant:\n"));
-      process.stdout.write(renderMarkdown(content));
+      process.stdout.write(renderMarkdown(displayContent));
       process.stdout.write("\n");
     }
 
-    const toolCalls = Object.values(toolCallAccumulator);
+    if ((finishReason === "tool_calls" || usingTextFallback) && toolCalls.length > 0) {
+      if (usingTextFallback) {
+        // Text-fallback: record the assistant turn as plain content; tool results go in as a user turn
+        history.push({ role: "assistant", content });
+      } else {
+        // Native tool_calls: use proper API format
+        history.push({
+          role: "assistant",
+          content: content || null,
+          tool_calls: toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        });
+      }
 
-    if (finishReason === "tool_calls" && toolCalls.length > 0) {
-      // Add assistant message with tool calls to history
-      history.push({
-        role: "assistant",
-        content: content || null,
-        tool_calls: toolCalls.map((tc) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: { name: tc.name, arguments: tc.arguments },
-        })),
-      });
+      const toolResultParts: string[] = [];
 
       // Execute each tool and append results
       for (const tc of toolCalls) {
@@ -177,23 +227,29 @@ export async function runAgent(
           const vsCodeResult = await approveWriteFileVSCode(args.path, args.content ?? "", readKey, _onApprovalPause, _onApprovalResume);
           const allowed = vsCodeResult !== null ? vsCodeResult : await approveWriteFile(args.path, args.content ?? "");
           if (!allowed) {
-            // Keep history intact so the model retains context — just record the decline
-            history.push({ role: "tool", tool_call_id: tc.id, content: "User declined this file change." });
-            history.push({ role: "assistant", content: "The file change was declined. I'll wait for further instructions." });
+            if (usingTextFallback) {
+              history.push({ role: "user", content: "The file change was declined. I'll wait for further instructions." });
+            } else {
+              history.push({ role: "tool", tool_call_id: tc.id, content: "User declined this file change." });
+              history.push({ role: "assistant", content: "The file change was declined. I'll wait for further instructions." });
+            }
             process.stdout.write(chalk.red("\n  Change declined. Waiting for your next instruction.\n"));
             return;
           }
         }
 
         const result = await executeTool(tc.name, args);
-
         process.stdout.write(chalk.gray(truncateToolOutput(result) + "\n"));
 
-        history.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: result,
-        });
+        if (usingTextFallback) {
+          toolResultParts.push(`[${tc.name} result]\n${result}`);
+        } else {
+          history.push({ role: "tool", tool_call_id: tc.id, content: result });
+        }
+      }
+
+      if (usingTextFallback && toolResultParts.length > 0) {
+        history.push({ role: "user", content: toolResultParts.join("\n\n") });
       }
 
       // Continue the loop — send tool results back to model

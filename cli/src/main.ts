@@ -27,9 +27,8 @@ function readIdeContext(): string | null {
   if (!existsSync(contextFile)) return null;
   try {
     const ctx = JSON.parse(readFileSync(contextFile, "utf-8"));
-    let msg = `[IDE context: file="${ctx.file}", language=${ctx.language}, line=${ctx.line}`;
-    if (ctx.selection) msg += `, selected text:\n${ctx.selection}`;
-    msg += "]";
+    let msg = `[IDE context: the user has this file open in their editor: "${ctx.file}" (language=${ctx.language}, cursor line=${ctx.line}). This is NOT the working project directory — use process.cwd() for that.]`;
+    if (ctx.selection) msg += ` Selected text:\n${ctx.selection}`;
     return msg;
   } catch {
     return null;
@@ -210,8 +209,18 @@ async function main(): Promise<void> {
       ];
       let spinIdx = 0;
       let phraseIdx = 0;
-      const spinnerRow = process.stdout.rows || 24;
       let startTime = Date.now();
+
+      // Always read terminal rows dynamically so the spinner stays at the
+      // actual bottom of the screen even as output scrolls the terminal.
+      const currentSpinnerRow = () => process.stdout.rows || 24;
+
+      const eraseSpinnerLine = () => {
+        if (process.stdout.isTTY) {
+          process.stdout.write(`\x1b[${currentSpinnerRow()};1H\x1b[K`);
+        }
+      };
+
       const startSpinner = (): NodeJS.Timeout | null => {
         if (!process.stdout.isTTY) return null;
         return setInterval(() => {
@@ -220,34 +229,57 @@ async function main(): Promise<void> {
           const frame = chalk.cyan(spinFrames[spinIdx++ % spinFrames.length]);
           const text = chalk.hex("#FFA500")(catchPhrases[phraseIdx % catchPhrases.length]);
           const time = chalk.hex("#FFA500")(`${elapsed}s`);
-          process.stdout.write(`\x1b[s\x1b[${spinnerRow};1H\x1b[K${frame} ${text} ${time}\x1b[u`);
+          const row = currentSpinnerRow();
+          process.stdout.write(`\x1b[s\x1b[${row};1H\x1b[K${frame} ${text} ${time}\x1b[u`);
         }, 80);
       };
+
+      // Helper to stop the spinner and erase its line cleanly.
+      // Safe to call multiple times — handles null gracefully.
+      const stopSpinner = (timer: NodeJS.Timeout | null) => {
+        if (timer) clearInterval(timer);
+        eraseSpinnerLine();
+      };
+
       let engageSpinner = startSpinner();
 
       let pauseStart = 0;
       setApprovalCallbacks(
-        () => { if (engageSpinner) clearInterval(engageSpinner); pauseStart = Date.now(); input.pause(); },
-        () => { startTime += Date.now() - pauseStart; engageSpinner = startSpinner(); input.resume(); },
+        () => {
+          stopSpinner(engageSpinner);
+          engageSpinner = null;
+          pauseStart = Date.now();
+          input.pause();
+        },
+        () => {
+          startTime += Date.now() - pauseStart;
+          engageSpinner = startSpinner();
+          input.resume();
+        },
       );
 
       const ideContext = readIdeContext();
       const messageWithContext = ideContext ? `${ideContext}\n\n${userMessage}` : userMessage;
 
-      // Stop the spinner and erase it BEFORE the agent prints any output.
+      // Stop the spinner before the agent prints any output.
       // The spinner uses \x1b[s/\x1b[u (save/restore cursor) which is safe while
       // nothing is scrolling — but once runAgent starts writing and the terminal
       // scrolls, the saved cursor position drifts off-screen. Clearing first
       // ensures the response always appears at the correct scroll position.
-      if (engageSpinner) clearInterval(engageSpinner);
-      if (process.stdout.isTTY) {
-        process.stdout.write(`\x1b[${spinnerRow};1H\x1b[K`); // erase spinner line
-      }
+      stopSpinner(engageSpinner);
+      engageSpinner = null;
 
       if (isBedrockUrl(currentUrl)) {
         await runBedrockAgent(bedrockConfigFromUrl(currentUrl, currentModelId), messageWithContext, history);
       } else {
         await runAgent(client, messageWithContext, history, currentModelId);
+      }
+
+      // Safety net: if a tool approval re-started the spinner and runAgent
+      // returned without clearing it (edge case), stop it now.
+      if (engageSpinner) {
+        stopSpinner(engageSpinner);
+        engageSpinner = null;
       }
 
       // Print elapsed time inline — no cursor gymnastics needed since the
