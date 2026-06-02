@@ -188,6 +188,22 @@ The VS Code extension (`pair-programmer-context`) automatically writes your acti
 
 When the assistant proposes a file change, it opens a diff in VS Code for review. After you accept or reject, the diff tab closes automatically.
 
+## Development Notes
+
+### Editing the system prompt
+
+`cli/src/system-prompt.ts` changes take effect immediately — no rebuild needed. The `pair` binary is a symlink to `cli/src/main.ts`, which runs via `#!/usr/bin/env tsx` (TypeScript executed directly at runtime). The `cli/dist/` folder exists but is not used by the CLI.
+
+### Editing the VS Code extension
+
+`vscode-extension/src/extension.ts` **requires a rebuild and reinstall** after every change — VS Code loads `out/extension.js` (compiled output), not the TypeScript source directly.
+
+```bash
+./scripts install-client
+```
+
+This recompiles, packages, and reinstalls the extension. Reload VS Code after (`Ctrl+Shift+P` → Developer: Reload Window).
+
 ## CLI Commands
 
 | Command | Description |

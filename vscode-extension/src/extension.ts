@@ -28,22 +28,26 @@ function writeContext(): void {
 
 async function closeEditorsByPath(paths: string[]): Promise<void> {
   const toClose = new Set(paths.map((p) => p.toLowerCase()));
+  const tabsToClose: vscode.Tab[] = [];
   for (const tabGroup of vscode.window.tabGroups.all) {
     for (const tab of tabGroup.tabs) {
       const input = tab.input;
       if (input instanceof vscode.TabInputText) {
         if (toClose.has(input.uri.fsPath.toLowerCase())) {
-          await vscode.window.tabGroups.close(tab);
+          tabsToClose.push(tab);
         }
       } else if (input instanceof vscode.TabInputTextDiff) {
         if (
           toClose.has(input.original.fsPath.toLowerCase()) ||
           toClose.has(input.modified.fsPath.toLowerCase())
         ) {
-          await vscode.window.tabGroups.close(tab);
+          tabsToClose.push(tab);
         }
       }
     }
+  }
+  if (tabsToClose.length > 0) {
+    await vscode.window.tabGroups.close(tabsToClose);
   }
 }
 
