@@ -26,7 +26,7 @@ CMD [ \
     "llama-server", \
     "--model", "/models/qwen3-coder-next-q4_k_m.gguf", \
     "--host", "0.0.0.0", \
-    "--port", "8004", \
+    "--port", "8884", \
     "--ctx-size", "262144", \
     "--n-gpu-layers", "999", \
     "--alias", "local", \

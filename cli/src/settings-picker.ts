@@ -128,7 +128,7 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
 
   const getValues = () => SETTINGS.map((s) => {
     if (s.key === "tool-output") return `${s.label}  ${chalk.gray(getToolOutputMode())}`;
-    if (s.key === "local-server-url") return `${s.label}  ${chalk.gray(config.localServerUrl ?? "http://localhost:8004")}`;
+    if (s.key === "local-server-url") return `${s.label}  ${chalk.gray(config.localServerUrl ?? "http://localhost:8884")}`;
     if (s.key === "smolvlm-server-url") return `${s.label}  ${chalk.gray(config.smolvlmServerUrl ?? "http://localhost:8005")}`;
     if (s.key === "aws-profile") return `${s.label}  ${chalk.gray(config.awsProfile ?? "(default)")}`;
     return s.label;
@@ -160,7 +160,7 @@ export async function showSettingsPicker(): Promise<Partial<AppConfig>> {
     }
 
     if (SETTINGS[idx].key === "local-server-url") {
-      const current = config.localServerUrl ?? "http://localhost:8004";
+      const current = config.localServerUrl ?? "http://localhost:8884";
       const newUrl = await promptText("Local Server URL", current);
       if (newUrl !== current) {
         config.localServerUrl = newUrl;

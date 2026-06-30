@@ -10,6 +10,7 @@ import { MODEL_NAME, TEMPERATURE } from "./config.js";
 import { createBedrockClient, streamBedrock, type BedrockConfig } from "./bedrock-client.js";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 import { approveWriteFileVSCode } from "./vscode-diff.js";
+import { hasInterrupt, popInterrupt, setAbortFn } from "./interrupt.js";
 
 type ToolOutputMode = "limited" | "some" | "all";
 let toolOutputMode: ToolOutputMode = "limited";
@@ -123,6 +124,18 @@ async function approveWriteFile(filePath: string, newContent: string): Promise<b
   return key === "y";
 }
 
+function drainInterrupts(history: ChatCompletionMessageParam[]): void {
+  while (hasInterrupt()) {
+    const msg = popInterrupt()!;
+    process.stdout.write(chalk.magenta(`\n▶ interrupt: ${msg}\n`));
+    history.push({ role: "user", content: msg });
+  }
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof Error && (e.name === "AbortError" || e.name === "APIUserAbortError");
+}
+
 export async function runAgent(
   client: OpenAI,
   userMessage: string,
@@ -133,14 +146,10 @@ export async function runAgent(
 
   // Agentic loop — continues until model stops calling tools
   while (true) {
-    const stream = await client.chat.completions.create({
-      model: modelName,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
-      tools: toolDefinitions,
-      tool_choice: "auto",
-      temperature: TEMPERATURE,
-      stream: true,
-    });
+    drainInterrupts(history);
+
+    const controller = new AbortController();
+    setAbortFn(() => controller.abort());
 
     // Accumulate streamed response
     let content = "";
@@ -149,27 +158,59 @@ export async function runAgent(
       { id: string; name: string; arguments: string }
     > = {};
     let finishReason: string | null = null;
+    let aborted = false;
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
+    try {
+      const stream = await client.chat.completions.create({
+        model: modelName,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
+        tools: toolDefinitions,
+        tool_choice: "auto",
+        temperature: TEMPERATURE,
+        stream: true,
+      }, { signal: controller.signal });
 
-      if (delta?.content) {
-        content += delta.content;
-      }
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
 
-      // Accumulate tool call deltas
-      if (delta?.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index;
-          if (!toolCallAccumulator[idx]) {
-            toolCallAccumulator[idx] = { id: tc.id ?? "", name: "", arguments: "" };
+        if (delta?.content) {
+          content += delta.content;
+        }
+
+        // Accumulate tool call deltas
+        if (delta?.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            if (!toolCallAccumulator[idx]) {
+              toolCallAccumulator[idx] = { id: tc.id ?? "", name: "", arguments: "" };
+            }
+            if (tc.id) toolCallAccumulator[idx].id = tc.id;
+            if (tc.function?.name) toolCallAccumulator[idx].name += tc.function.name;
+            if (tc.function?.arguments) toolCallAccumulator[idx].arguments += tc.function.arguments;
           }
-          if (tc.id) toolCallAccumulator[idx].id = tc.id;
-          if (tc.function?.name) toolCallAccumulator[idx].name += tc.function.name;
-          if (tc.function?.arguments) toolCallAccumulator[idx].arguments += tc.function.arguments;
         }
       }
+    } catch (e: unknown) {
+      if (isAbortError(e)) {
+        aborted = true;
+      } else {
+        setAbortFn(null);
+        throw e;
+      }
+    } finally {
+      setAbortFn(null);
+    }
+
+    if (aborted) {
+      if (content) {
+        process.stdout.write(chalk.cyan("\nAssistant:\n"));
+        process.stdout.write(renderMarkdown(content));
+        process.stdout.write("\n");
+      }
+      history.push({ role: "assistant", content: content || "…" });
+      process.stdout.write(chalk.yellow("⊘ interrupted\n"));
+      return;
     }
 
     const apiToolCalls = Object.values(toolCallAccumulator);
@@ -258,6 +299,8 @@ export async function runAgent(
 
     // Model finished with a regular response — add to history and exit loop
     history.push({ role: "assistant", content });
+    // Pick up any interrupts queued during the final response stream
+    if (hasInterrupt()) continue;
     break;
   }
 }
@@ -273,26 +316,50 @@ export async function runBedrockAgent(
   const client = createBedrockClient(bedrockConfig);
 
   while (true) {
-    const result = await streamBedrock(client, bedrockConfig, SYSTEM_PROMPT, history, toolDefinitions);
+    drainInterrupts(history);
 
-    if (result.content) {
+    const controller = new AbortController();
+    setAbortFn(() => controller.abort());
+
+    let result;
+    let aborted = false;
+    try {
+      result = await streamBedrock(client, bedrockConfig, SYSTEM_PROMPT, history, toolDefinitions, controller.signal);
+    } catch (e: unknown) {
+      if (isAbortError(e)) {
+        aborted = true;
+      } else {
+        setAbortFn(null);
+        throw e;
+      }
+    } finally {
+      setAbortFn(null);
+    }
+
+    if (aborted) {
+      history.push({ role: "assistant", content: "…" });
+      process.stdout.write(chalk.yellow("⊘ interrupted\n"));
+      return;
+    }
+
+    if (result!.content) {
       process.stdout.write(chalk.cyan("\nAssistant:\n"));
-      process.stdout.write(renderMarkdown(result.content));
+      process.stdout.write(renderMarkdown(result!.content));
       process.stdout.write("\n");
     }
 
-    if (result.stopReason === "tool_use" && result.toolCalls.length > 0) {
+    if (result!.stopReason === "tool_use" && result!.toolCalls.length > 0) {
       history.push({
         role: "assistant",
-        content: result.content || null,
-        tool_calls: result.toolCalls.map((tc) => ({
+        content: result!.content || null,
+        tool_calls: result!.toolCalls.map((tc) => ({
           id: tc.id,
           type: "function" as const,
           function: { name: tc.name, arguments: tc.arguments },
         })),
       });
 
-      for (const tc of result.toolCalls) {
+      for (const tc of result!.toolCalls) {
         let args: Record<string, string>;
         try { args = JSON.parse(tc.arguments); } catch { args = {}; }
 
@@ -320,7 +387,8 @@ export async function runBedrockAgent(
       continue;
     }
 
-    history.push({ role: "assistant", content: result.content });
+    history.push({ role: "assistant", content: result!.content });
+    if (hasInterrupt()) continue;
     break;
   }
 }

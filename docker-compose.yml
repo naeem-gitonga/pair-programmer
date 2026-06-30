@@ -4,7 +4,7 @@ services:
       context: ./llamacpp
       dockerfile: Dockerfile
     ports:
-      - "8004:8004"
+      - "8884:8884"
     volumes:
       - ./llamacpp/models:/models
     environment:

@@ -213,7 +213,7 @@ async function main(): Promise<void> {
 
       // Always read terminal rows dynamically so the spinner stays at the
       // actual bottom of the screen even as output scrolls the terminal.
-      const currentSpinnerRow = () => process.stdout.rows || 24;
+      const currentSpinnerRow = () => Math.max(1, (process.stdout.rows || 24) - 2);
 
       const eraseSpinnerLine = () => {
         if (process.stdout.isTTY) {

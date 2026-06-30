@@ -13,12 +13,12 @@ function ensureSignalDir(): void {
 
 function writeOpenSignal(oldPath: string, newPath: string, label: string): void {
   ensureSignalDir();
-  try { writeFileSync(OPEN_SIGNAL, JSON.stringify({ old: oldPath, new: newPath, label })); } catch { /* ignore */ }
+  try { writeFileSync(OPEN_SIGNAL, JSON.stringify({ old: oldPath, new: newPath, label, cwd: process.cwd() })); } catch { /* ignore */ }
 }
 
 function writeCloseSignal(paths: string[]): void {
   ensureSignalDir();
-  try { writeFileSync(CLOSE_SIGNAL, JSON.stringify(paths)); } catch { /* ignore */ }
+  try { writeFileSync(CLOSE_SIGNAL, JSON.stringify({ paths, cwd: process.cwd() })); } catch { /* ignore */ }
 }
 
 // Check whether the extension is active by seeing if it has recently written context.json

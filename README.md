@@ -77,7 +77,7 @@ For SmolVLM2 (vision), download [SmolVLM2-500M-Video-Instruct](https://huggingfa
 **3. Install and start the servers:**
 ```bash
 ./scripts install-server   # checks models, builds Docker images
-./scripts run-server       # starts llama.cpp on port 8004
+./scripts run-server       # starts llama.cpp on port 8884
 ./scripts run-smolvlm2     # starts SmolVLM2 on port 8005 (optional)
 ```
 
@@ -140,7 +140,7 @@ Example `models.json`:
 [
   {
     "name": "Qwen3-Coder-Next (local)",
-    "url": "http://localhost:8004",
+    "url": "http://localhost:8884",
     "modelId": "Qwen3 Coder (Local)",
     "purpose": "text"
   },
@@ -226,7 +226,7 @@ Settings are persisted to `~/.pair-programmer/config.json`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LLM_SERVER_URL` | `http://localhost:8004` | Default LLM server URL (overridden by saved config) |
+| `LLM_SERVER_URL` | `http://localhost:8884` | Default LLM server URL (overridden by saved config) |
 | `LLM_MODEL_NAME` | `local` | Model name sent to the server |
 | `LLM_TEMPERATURE` | `0.7` | Sampling temperature |
 | `SMOLVLM_SERVER_URL` | `http://localhost:8005` | SmolVLM2 server URL |
@@ -239,7 +239,7 @@ Settings are persisted to `~/.pair-programmer/config.json`.
 |---------|-------------|
 | `./scripts install-client` | Install CLI globally + VS Code extension |
 | `./scripts install-server` | Check models and build Docker images |
-| `./scripts run-server` | Start the llama.cpp server (port 8004) |
+| `./scripts run-server` | Start the llama.cpp server (port 8884) |
 | `./scripts run-smolvlm2` | Start the SmolVLM2 server (port 8005) |
 | `./scripts start` | Build and start all Docker services |
 | `./scripts down` | Stop all Docker services |

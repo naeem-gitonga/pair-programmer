@@ -1,7 +1,7 @@
 [
   {
     "name": "Qwen3-Coder-Next (local)",
-    "url": "http://localhost:8004",
+    "url": "http://localhost:8884",
     "modelId": "Qwen3 Coder (Local)",
     "purpose": "text"
   },
@@ -15,12 +15,6 @@
     "name": "AWS Bedrock - Qwen3-Coder-Next",
     "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
     "modelId": "qwen.qwen3-coder-next",
-    "purpose": "text"
-  },
-  {
-    "name": "AWS Bedrock - Claude Sonnet 4.6",
-    "url": "https://bedrock-runtime.us-east-1.amazonaws.com",
-    "modelId": "us.anthropic.claude-sonnet-4-6",
     "purpose": "text"
   }
 ]

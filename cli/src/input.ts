@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { triggerAbort } from "./interrupt.js";
 
 const PROMPT = "You: ";
 const SHIFT_ENTER = ["\x1b[13;2u", "\x1b[27;2;13~", "\x1b\r"];
@@ -12,9 +13,17 @@ function normalizeNewlines(s: string): string {
 export class FullScreenInput {
   private history: string[] = [];
   private historyIdx = -1;
+  private _agentRunning = false;
+  private _pauseCallback: (() => void) | null = null;
+  private _resumeCallback: (() => void) | null = null;
 
-  pause() {}
-  resume() {}
+  pause() {
+    this._pauseCallback?.();
+  }
+
+  resume() {
+    this._resumeCallback?.();
+  }
 
   async start(onMessage: (message: string) => Promise<void>): Promise<void> {
     if (process.stdout.isTTY) {
@@ -27,20 +36,38 @@ export class FullScreenInput {
       process.exit(0);
     });
 
+    const queue: string[] = [];
+    let agentRunning = false;
+
+    const processQueue = async () => {
+      while (queue.length > 0) {
+        this._agentRunning = true;
+        agentRunning = true;
+        const msg = queue.shift()!;
+        try {
+          await onMessage(msg);
+        } catch (err) {
+          process.stdout.write(chalk.red(`\nError: ${(err as Error).message}\n`));
+        }
+        agentRunning = false;
+        this._agentRunning = false;
+      }
+    };
+
     while (true) {
-      const input = await this.readLine();
-      if (!input.trim()) continue;
-      if (["exit", "quit"].includes(input.trim().toLowerCase())) {
+      const rawInput = await this.readLine();
+      const trimmed = rawInput.trim();
+      if (!trimmed) continue;
+      if (["exit", "quit"].includes(trimmed.toLowerCase())) {
         if (process.stdout.isTTY) process.stdout.write("\x1b[?2004l");
         process.stdout.write(chalk.gray("Bye.\n"));
         process.exit(0);
       }
-      this.history.unshift(input);
+      this.history.unshift(rawInput);
       this.historyIdx = -1;
-      try {
-        await onMessage(input.trim());
-      } catch (err) {
-        process.stdout.write(chalk.red(`\nError: ${(err as Error).message}\n`));
+      queue.push(trimmed);
+      if (!agentRunning) {
+        processQueue(); // don't await — runs concurrently with next readLine
       }
     }
   }
@@ -233,24 +260,24 @@ export class FullScreenInput {
 
         // ── Enter — submit ────────────────────────────────────────────────────
         if (seq === "\r" || seq === "\n") {
-          // Clear just the input area, move to the last row, and emit a newline
-          // so subsequent output flows naturally below — no full-screen wipe,
-          // which would destroy scroll-back and truncate large pastes.
           gotoInputTop(prevLines);
           process.stdout.write("\x1b[J"); // erase input area only
           process.stdout.write(`\x1b[${rows()};1H`); // move to bottom row
           process.stdout.write("\n"); // push cursor below bottom-anchor line
           if (process.stdout.isTTY) process.stdout.write("\x1b[?25h");
-          if (process.stdin.isTTY) process.stdin.setRawMode(false);
           process.stdin.removeListener("data", onData);
-          // Normalize line endings before resolving so \r\n and bare \r don't
-          // cause terminal lines to overwrite each other in the YOU: block.
+          this._pauseCallback = null;
+          this._resumeCallback = null;
           resolve(normalizeNewlines(buffer));
           return;
         }
 
         // ── Ctrl+C ────────────────────────────────────────────────────────────
         if (seq === "\x03") {
+          if (this._agentRunning) {
+            triggerAbort();
+            return;
+          }
           if (process.stdout.isTTY) process.stdout.write("\x1b[?2004l\x1b[?25h");
           process.stdout.write(chalk.gray("\nBye.\n"));
           process.exit(0);
@@ -388,6 +415,20 @@ export class FullScreenInput {
         buffer = buffer.slice(0, at) + seq + buffer.slice(at);
         cursorPos = at + seq.length;
         activePaste = -1;
+        draw();
+      };
+
+      this._pauseCallback = () => {
+        process.stdin.removeListener("data", onData);
+        if (process.stdout.isTTY) {
+          gotoInputTop(prevLines);
+          process.stdout.write("\x1b[J");
+        }
+      };
+      this._resumeCallback = () => {
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.on("data", onData);
         draw();
       };
 

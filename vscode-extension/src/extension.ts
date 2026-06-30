@@ -29,25 +29,23 @@ function writeContext(): void {
 async function closeEditorsByPath(paths: string[]): Promise<void> {
   const toClose = new Set(paths.map((p) => p.toLowerCase()));
   const tabsToClose: vscode.Tab[] = [];
+
   for (const tabGroup of vscode.window.tabGroups.all) {
     for (const tab of tabGroup.tabs) {
       const input = tab.input;
       if (input instanceof vscode.TabInputText) {
-        if (toClose.has(input.uri.fsPath.toLowerCase())) {
-          tabsToClose.push(tab);
-        }
+        if (toClose.has(input.uri.fsPath.toLowerCase())) tabsToClose.push(tab);
       } else if (input instanceof vscode.TabInputTextDiff) {
-        if (
-          toClose.has(input.original.fsPath.toLowerCase()) ||
-          toClose.has(input.modified.fsPath.toLowerCase())
-        ) {
+        if (toClose.has(input.original.fsPath.toLowerCase()) || toClose.has(input.modified.fsPath.toLowerCase())) {
           tabsToClose.push(tab);
         }
       }
     }
   }
+
   if (tabsToClose.length > 0) {
-    await vscode.window.tabGroups.close(tabsToClose);
+    const ok = await vscode.window.tabGroups.close(tabsToClose);
+    if (!ok) vscode.window.showWarningMessage("pair-prog: tabGroups.close() returned false");
   }
 }
 
@@ -63,8 +61,15 @@ function watchSignals(context: vscode.ExtensionContext): void {
   const handleOpen = async () => {
     if (!fs.existsSync(OPEN_SIGNAL)) return;
     try {
-      const { old: oldPath, new: newPath, label } = JSON.parse(fs.readFileSync(OPEN_SIGNAL, "utf-8"));
-      fs.unlinkSync(OPEN_SIGNAL);
+      const { old: oldPath, new: newPath, label, cwd } = JSON.parse(fs.readFileSync(OPEN_SIGNAL, "utf-8"));
+      const folders = vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath) ?? [];
+      if (cwd && !folders.some((f) => cwd.startsWith(f))) return;
+      try {
+        fs.unlinkSync(OPEN_SIGNAL);
+      } catch (e: any) {
+        if (e.code === "ENOENT") return;
+        throw e;
+      }
       await vscode.commands.executeCommand(
         "vscode.diff",
         vscode.Uri.file(oldPath),
@@ -85,11 +90,22 @@ function watchSignals(context: vscode.ExtensionContext): void {
   const handleClose = async () => {
     if (!fs.existsSync(CLOSE_SIGNAL)) return;
     try {
-      const paths: string[] = JSON.parse(fs.readFileSync(CLOSE_SIGNAL, "utf-8"));
-      fs.unlinkSync(CLOSE_SIGNAL);
+      const raw = JSON.parse(fs.readFileSync(CLOSE_SIGNAL, "utf-8"));
+      const paths: string[] = Array.isArray(raw) ? raw : raw.paths;
+      const cwd: string | undefined = Array.isArray(raw) ? undefined : raw.cwd;
+      const folders = vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath) ?? [];
+      if (cwd && !folders.some((f) => cwd.startsWith(f))) return;
+      try {
+        fs.unlinkSync(CLOSE_SIGNAL);
+      } catch (e: any) {
+        if (e.code === "ENOENT") return; // another handler already claimed it
+        throw e;
+      }
       await closeEditorsByPath(paths);
       await vscode.commands.executeCommand("workbench.action.terminal.focus");
-    } catch { /* ignore */ }
+    } catch (e) {
+      vscode.window.showErrorMessage(`pair-prog close error: ${e}`);
+    }
   };
   context.subscriptions.push(closeWatcher.onDidCreate(handleClose));
   context.subscriptions.push(closeWatcher.onDidChange(handleClose));

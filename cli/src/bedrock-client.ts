@@ -137,6 +137,7 @@ export async function streamBedrock(
   systemPrompt: string,
   messages: ChatCompletionMessageParam[],
   tools: ChatCompletionTool[],
+  abortSignal?: AbortSignal,
 ): Promise<BedrockResult> {
   const command = new ConverseStreamCommand({
     modelId: config.modelId,
@@ -148,7 +149,7 @@ export async function streamBedrock(
   log.info(`Sending Bedrock request`, { modelId: config.modelId, messageCount: messages.length });
   let response;
   try {
-    response = await client.send(command);
+    response = await client.send(command, { abortSignal });
   } catch (err) {
     log.error("Bedrock request failed", err);
     throw err;

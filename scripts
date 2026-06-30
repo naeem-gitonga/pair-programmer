@@ -137,7 +137,7 @@ run-server() {
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     echo "==> Starting LLM servers..."
     cd "$SCRIPT_DIR" && docker compose up -d
-    echo "    ✓ Qwen3 server running on port 8004"
+    echo "    ✓ Qwen3 server running on port 8884"
     echo "    ✓ SmolVLM2 server running on port 8005"
 }
 
@@ -154,7 +154,7 @@ help() {
     echo "Available commands:"
     echo "  install-client   - Install CLI globally + VS Code extension (run on your coding machine)"
     echo "  install-server   - Check models and build Docker image (run on the machine hosting the models)"
-    echo "  run-server       - Start the LLM servers (Qwen3 on 8004, SmolVLM2 on 8005)"
+    echo "  run-server       - Start the LLM servers (Qwen3 on 8884, SmolVLM2 on 8005)"
     echo "  run-smolvlm2     - Start only SmolVLM2 server (on port 8005)"
     echo "  start            - Build and start all services"
     echo "  down             - Stop all services"
